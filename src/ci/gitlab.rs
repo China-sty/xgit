@@ -498,7 +498,9 @@ mod tests {
             "sha": "abc123",
             "merge_commit_sha": "def456",
             "squash_commit_sha": null,
-            "squash": false
+            "squash": false,
+            "source_project_id": 123,
+            "target_project_id": 456
         }"#;
         let mr: GitLabMergeRequest = serde_json::from_str(json).unwrap();
         assert_eq!(mr.iid, 42);
@@ -509,6 +511,8 @@ mod tests {
         assert_eq!(mr.merge_commit_sha, Some("def456".to_string()));
         assert!(mr.squash_commit_sha.is_none());
         assert_eq!(mr.squash, Some(false));
+        assert_eq!(mr.source_project_id, 123);
+        assert_eq!(mr.target_project_id, 456);
     }
 
     #[test]
@@ -521,12 +525,16 @@ mod tests {
             "sha": "head123",
             "merge_commit_sha": "merge456",
             "squash_commit_sha": "squash789",
-            "squash": true
+            "squash": true,
+            "source_project_id": 123,
+            "target_project_id": 123
         }"#;
         let mr: GitLabMergeRequest = serde_json::from_str(json).unwrap();
         assert_eq!(mr.iid, 99);
         assert_eq!(mr.squash_commit_sha, Some("squash789".to_string()));
         assert_eq!(mr.squash, Some(true));
+        assert_eq!(mr.source_project_id, 123);
+        assert_eq!(mr.target_project_id, 123);
     }
 
     #[test]
@@ -535,7 +543,9 @@ mod tests {
             "iid": 1,
             "source_branch": "dev",
             "target_branch": "main",
-            "sha": "abc"
+            "sha": "abc",
+            "source_project_id": 999,
+            "target_project_id": 999
         }"#;
         let mr: GitLabMergeRequest = serde_json::from_str(json).unwrap();
         assert_eq!(mr.iid, 1);
@@ -543,6 +553,8 @@ mod tests {
         assert!(mr.merge_commit_sha.is_none());
         assert!(mr.squash_commit_sha.is_none());
         assert!(mr.squash.is_none());
+        assert_eq!(mr.source_project_id, 999);
+        assert_eq!(mr.target_project_id, 999);
     }
 
     #[test]
