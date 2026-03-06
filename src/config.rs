@@ -970,6 +970,7 @@ mod tests {
             default_prompt_storage: None,
             api_key: None,
             quiet: false,
+            custom_attributes: HashMap::new(),
         }
     }
 
@@ -1077,6 +1078,7 @@ mod tests {
             default_prompt_storage: None,
             api_key: None,
             quiet: false,
+            custom_attributes: HashMap::new(),
         }
     }
 
@@ -1193,6 +1195,7 @@ mod tests {
             default_prompt_storage: default_prompt_storage.map(|s| s.to_string()),
             api_key: None,
             quiet: false,
+            custom_attributes: HashMap::new(),
         }
     }
 

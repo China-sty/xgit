@@ -638,6 +638,10 @@ fn record_commit_metrics(
         attrs = attrs.branch(short_branch);
     }
 
+    // Attach custom attributes
+    let custom = Config::get().custom_attributes();
+    attrs = attrs.custom_attributes_map(custom);
+
     // Record the metric
     record(values, attrs);
 }
