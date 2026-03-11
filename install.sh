@@ -10,7 +10,7 @@ INSTALL_USER=""
 
 if [ -z "${HOME:-}" ]; then
     if command -v scutil >/dev/null 2>&1; then
-        CURRENT_USER=$( /usr/sbin/scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }' )
+        CURRENT_USER=$( /usr/sbin/scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ { print $3 }' || true )
         if [ -n "${CURRENT_USER:-}" ] && [ "$CURRENT_USER" != "loginwindow" ] && [ "$CURRENT_USER" != "_mbsetupuser" ]; then
             export HOME=$( /usr/bin/dscl . -read "/Users/$CURRENT_USER" NFSHomeDirectory | awk '{print $2}' )
             INSTALL_USER="$CURRENT_USER"
@@ -19,7 +19,8 @@ if [ -z "${HOME:-}" ]; then
             exit 1
         fi
     elif id -un >/dev/null 2>&1; then
-        export HOME=$(getent passwd "$(id -un)" | cut -d: -f6)
+        INSTALL_USER="$(id -un)"
+        export HOME=$(getent passwd "$INSTALL_USER" | cut -d: -f6)
         if [ -z "$HOME" ]; then
             export HOME="/root"
         fi
@@ -31,9 +32,9 @@ fi
 # Ensure SHELL is set (also may be unbound in JAMF)
 if [ -z "${SHELL:-}" ]; then
     if command -v zsh >/dev/null 2>&1; then
-        SHELL="/bin/zsh"
+        SHELL="$(command -v zsh)"
     elif command -v bash >/dev/null 2>&1; then
-        SHELL="/bin/bash"
+        SHELL="$(command -v bash)"
     else
         SHELL="/bin/sh"
     fi

@@ -316,14 +316,12 @@ jobs:
           if [ -z "$CHECKSUMS" ]; then
             CHECKSUMS="__CHECKSUMS_PLACEHOLDER__"
           fi
-          # Replace variable assignment lines to embed release-specific values
-          # Line 15: REPO, Line 22: PINNED_VERSION, Line 27: EMBEDDED_CHECKSUMS
-          awk -v repo="$REPO" -v version="$VERSION" -v checksums="$CHECKSUMS" '
-            NR==15 { sub(/__REPO_PLACEHOLDER__/, repo) }
-            NR==22 { sub(/__VERSION_PLACEHOLDER__/, version) }
-            NR==27 { sub(/__CHECKSUMS_PLACEHOLDER__/, checksums) }
-            { print }
-          ' repo/install.sh > release/install.sh
+          # Replace placeholder values with release-specific values (pattern-based to be resilient to line changes)
+          sed \
+            -e "s|REPO=\"__REPO_PLACEHOLDER__\"|REPO=\"$REPO\"|" \
+            -e "s|PINNED_VERSION=\"__VERSION_PLACEHOLDER__\"|PINNED_VERSION=\"$VERSION\"|" \
+            -e "s|EMBEDDED_CHECKSUMS=\"__CHECKSUMS_PLACEHOLDER__\"|EMBEDDED_CHECKSUMS=\"$CHECKSUMS\"|" \
+            repo/install.sh > release/install.sh
           chmod +x release/install.sh
           echo "Generated version-pinned install.sh for $VERSION from $REPO"
           echo "Embedded checksums: $CHECKSUMS"
@@ -337,14 +335,12 @@ jobs:
           if [ -z "$CHECKSUMS" ]; then
             CHECKSUMS="__CHECKSUMS_PLACEHOLDER__"
           fi
-          # Replace variable assignment lines to embed release-specific values
-          # Line 90: REPO, Line 97: PINNED_VERSION, Line 102: EMBEDDED_CHECKSUMS
-          awk -v repo="$REPO" -v version="$VERSION" -v checksums="$CHECKSUMS" '
-            NR==90 { sub(/__REPO_PLACEHOLDER__/, repo) }
-            NR==97 { sub(/__VERSION_PLACEHOLDER__/, version) }
-            NR==102 { sub(/__CHECKSUMS_PLACEHOLDER__/, checksums) }
-            { print }
-          ' repo/install.ps1 > release/install.ps1
+          # Replace placeholder values with release-specific values (pattern-based to be resilient to line changes)
+          sed \
+            -e "s|\$Repo = '__REPO_PLACEHOLDER__'|\$Repo = '$REPO'|" \
+            -e "s|\$PinnedVersion = '__VERSION_PLACEHOLDER__'|\$PinnedVersion = '$VERSION'|" \
+            -e "s|\$EmbeddedChecksums = '__CHECKSUMS_PLACEHOLDER__'|\$EmbeddedChecksums = '$CHECKSUMS'|" \
+            repo/install.ps1 > release/install.ps1
           echo "Generated version-pinned install.ps1 for $VERSION from $REPO"
 
       - name: Add install scripts to SHA256SUMS
