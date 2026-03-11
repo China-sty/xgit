@@ -1,3 +1,4 @@
+use crate::api::client::ApiContext;
 use crate::auth::{AuthState, collect_auth_status, format_unix_timestamp};
 use crate::config;
 
@@ -18,9 +19,17 @@ pub fn handle_whoami(args: &[String]) {
 
     let api_base_url = config::Config::get().api_base_url().to_string();
     let auth = collect_auth_status();
+    let api_ctx = ApiContext::new(None);
 
     println!("API Base URL: {}", api_base_url);
     println!("Credential backend: {}", auth.backend);
+
+    if let Some(api_key) = &api_ctx.api_key {
+        let masked = mask_api_key(api_key);
+        println!("API key: {}", masked);
+        println!("Auth state: api key");
+        return;
+    }
 
     match &auth.state {
         AuthState::LoggedOut => {
@@ -82,6 +91,13 @@ pub fn handle_whoami(args: &[String]) {
             println!("  - {} ({}) [{}] role={}", org_slug, org_name, org_id, role);
         }
     }
+}
+
+fn mask_api_key(key: &str) -> String {
+    if key.len() <= 8 {
+        return "*".repeat(key.len());
+    }
+    format!("{}...{}", &key[..4], &key[key.len() - 4..])
 }
 
 fn print_help() {

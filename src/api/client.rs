@@ -167,14 +167,11 @@ impl ApiContext {
             .with_header("Content-Type", "application/json")
             .with_body(body_json);
 
-        // Add authentication header if token is present
-        if let Some(token) = &self.auth_token {
-            request = request.with_header("Authorization", format!("Bearer {}", token));
-        }
-
-        // Add API key header if present
+        // API key takes precedence over OAuth token when both are present
         if let Some(api_key) = &self.api_key {
             request = request.with_header("X-API-Key", api_key);
+        } else if let Some(token) = &self.auth_token {
+            request = request.with_header("Authorization", format!("Bearer {}", token));
         }
 
         // Set timeout if specified
@@ -195,14 +192,11 @@ impl ApiContext {
 
         let mut request = Self::http_get(&url);
 
-        // Add authentication header if token is present
-        if let Some(token) = &self.auth_token {
-            request = request.with_header("Authorization", format!("Bearer {}", token));
-        }
-
-        // Add API key header if present
+        // API key takes precedence over OAuth token when both are present
         if let Some(api_key) = &self.api_key {
             request = request.with_header("X-API-Key", api_key);
+        } else if let Some(token) = &self.auth_token {
+            request = request.with_header("Authorization", format!("Bearer {}", token));
         }
 
         // Set timeout if specified
@@ -244,6 +238,11 @@ impl ApiClient {
     /// Check if user is logged in (has an auth token)
     pub fn is_logged_in(&self) -> bool {
         self.context.auth_token.is_some()
+    }
+
+    /// Check if an API key is configured
+    pub fn has_api_key(&self) -> bool {
+        self.context.api_key.is_some()
     }
 }
 
