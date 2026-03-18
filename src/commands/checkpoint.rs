@@ -1092,6 +1092,7 @@ fn get_checkpoint_entry_for_file(
         &file_path,
         &file_content_hash,
         author_id.as_ref(),
+        kind != CheckpointKind::Human,
         &previous_content,
         &prev_attributions,
         &current_content,
@@ -1271,6 +1272,7 @@ fn make_entry_for_file(
     file_path: &str,
     blob_sha: &str,
     author_id: &str,
+    is_ai_checkpoint: bool,
     previous_content: &str,
     previous_attributions: &[Attribution],
     content: &str,
@@ -1292,12 +1294,13 @@ fn make_entry_for_file(
     ));
 
     let update_start = Instant::now();
-    let new_attributions = tracker.update_attributions(
+    let new_attributions = tracker.update_attributions_for_checkpoint(
         previous_content,
         content,
         &filled_in_prev_attributions,
         author_id,
         ts,
+        is_ai_checkpoint,
     )?;
     debug_log(&format!(
         "[BENCHMARK]   update_attributions for {} took {:?}",
@@ -1310,9 +1313,10 @@ fn make_entry_for_file(
 
     let line_attr_start = Instant::now();
     let line_attributions =
-        crate::authorship::attribution_tracker::attributions_to_line_attributions(
+        crate::authorship::attribution_tracker::attributions_to_line_attributions_for_checkpoint(
             &new_attributions,
             content,
+            is_ai_checkpoint,
         );
     debug_log(&format!(
         "[BENCHMARK]   attributions_to_line_attributions for {} took {:?}",
