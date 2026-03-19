@@ -127,7 +127,10 @@ fn test_prepare_working_log_squash_with_main_changes() {
     );
     assert_eq!(stats.ai_additions, 2, "2 AI lines from feature branch");
     assert_eq!(stats.ai_accepted, 2, "2 AI lines accepted without edits");
-    assert_eq!(stats.human_additions, 0, "0 human lines from feature branch");
+    assert_eq!(
+        stats.human_additions, 0,
+        "0 human lines from feature branch"
+    );
     assert_eq!(stats.mixed_additions, 0, "No mixed edits");
 }
 
@@ -184,10 +187,7 @@ fn test_prepare_working_log_squash_multiple_sessions() {
         "3 AI lines from feature branch (both sessions plus reformatted footer)"
     );
     assert_eq!(stats.ai_accepted, 3, "3 AI lines accepted without edits");
-    assert_eq!(
-        stats.human_additions, 1,
-        "1 human line from feature branch"
-    );
+    assert_eq!(stats.human_additions, 1, "1 human line from feature branch");
     assert_eq!(stats.mixed_additions, 0, "No mixed edits");
 }
 
