@@ -115,8 +115,20 @@ pub fn commit_post_command_hook(
                 String::new()
             };
 
-            if !message.is_empty() && !message.contains("ai生成") {
-                let new_message = format!("{}\n\nai生成", message);
+            if !message.is_empty() && !message.contains("ai参与率") {
+                // Calculate AI participation rate
+                let ai_rate = if let Ok(stats) = crate::authorship::stats::stats_for_commit_stats(&repository, &sha, &[]) {
+                    let total = stats.human_additions + stats.ai_additions;
+                    if total > 0 {
+                        ((stats.ai_additions as f64 / total as f64) * 100.0).round() as u32
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+
+                let new_message = format!("{}\n\nai参与率: {}%", message, ai_rate);
 
                 use crate::git::repository::disable_internal_git_hooks;
                 let _guard = disable_internal_git_hooks();

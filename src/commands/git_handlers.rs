@@ -173,46 +173,6 @@ pub fn handle_git(args: &[String]) {
 
         send_wrapper_post_state_to_daemon(&invocation_id, worktree.as_deref(), &post_state);
 
-        // --- 事后 Amend 追加法 (Async Mode 适配) ---
-        // 在 wrapper 模式下，直接拦截刚生成的 commit，追加“ai生成”后缀
-        if exit_status.success() && parsed.command.as_deref() == Some("commit") && let Some(repo) = repository.as_ref() {
-            if let Some(sha) = repo.head().ok().and_then(|h| h.target().ok()) {
-                let is_merge = repo
-                    .find_commit(sha.clone())
-                    .map(|c| c.parent_count().unwrap_or(0) > 1)
-                    .unwrap_or(false);
-
-                if !is_merge {
-                    let mut log_args = repo.global_args_for_exec();
-                    log_args.push("log".to_string());
-                    log_args.push("-1".to_string());
-                    log_args.push("--pretty=%B".to_string());
-                    log_args.push(sha.clone());
-
-                    let message = if let Ok(output) = crate::git::repository::exec_git(&log_args) {
-                        String::from_utf8_lossy(&output.stdout).trim().to_string()
-                    } else {
-                        String::new()
-                    };
-
-                    if !message.is_empty() && !message.contains("ai生成") {
-                        let new_message = format!("{}\n\nai生成", message);
-                        let _guard = crate::git::repository::disable_internal_git_hooks();
-
-                        let mut amend_args = repo.global_args_for_exec();
-                        amend_args.push("commit".to_string());
-                        amend_args.push("--amend".to_string());
-                        amend_args.push("-m".to_string());
-                        amend_args.push(new_message);
-
-                        let _ = crate::git::repository::exec_git(&amend_args);
-                        // Daemon will automatically pick up the new trace event for this amend.
-                    }
-                }
-            }
-        }
-        // ----------------------------------------
-
         // After a successful commit, wait briefly for the daemon to produce an
         // authorship note so we can show stats inline (same UX as plain wrapper mode).
         if exit_status.success()
@@ -784,6 +744,48 @@ fn maybe_show_async_post_commit_stats(parsed: &ParsedGitInvocation, repo: &Repos
     // Compute and display the full stats.
     if let Ok(stats) = stats_for_commit_stats(repo, &commit_sha, &ignore_patterns) {
         write_stats_to_terminal(&stats, true);
+
+        // --- 事后 Amend 追加法 (Async Mode 适配) ---
+        // 在 wrapper 模式下，等到 daemon 处理完 authorship note 并完成统计后，再追加“ai参与率”后缀
+        let is_merge = repo
+            .find_commit(commit_sha.clone())
+            .map(|c| c.parent_count().unwrap_or(0) > 1)
+            .unwrap_or(false);
+
+        if !is_merge {
+            let mut log_args = repo.global_args_for_exec();
+            log_args.push("log".to_string());
+            log_args.push("-1".to_string());
+            log_args.push("--pretty=%B".to_string());
+            log_args.push(commit_sha.clone());
+
+            let message = if let Ok(output) = crate::git::repository::exec_git(&log_args) {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            } else {
+                String::new()
+            };
+
+            if !message.is_empty() && !message.contains("ai参与率") {
+                let total = stats.human_additions + stats.ai_additions;
+                let ai_rate = if total > 0 {
+                    ((stats.ai_additions as f64 / total as f64) * 100.0).round() as u32
+                } else {
+                    0
+                };
+
+                let new_message = format!("{}\n\nai参与率: {}%", message, ai_rate);
+                let _guard = crate::git::repository::disable_internal_git_hooks();
+
+                let mut amend_args = repo.global_args_for_exec();
+                amend_args.push("commit".to_string());
+                amend_args.push("--amend".to_string());
+                amend_args.push("-m".to_string());
+                amend_args.push(new_message);
+
+                let _ = crate::git::repository::exec_git(&amend_args);
+            }
+        }
+        // ----------------------------------------
     }
 }
 
