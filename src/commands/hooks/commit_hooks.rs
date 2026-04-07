@@ -1,7 +1,10 @@
 use crate::authorship::pre_commit;
+use crate::authorship::ignore::effective_ignore_patterns;
+use crate::authorship::post_commit::estimate_stats_cost_for_head;
+use crate::authorship::stats::stats_for_commit_stats;
 use crate::commands::git_handlers::CommandHooksContext;
 use crate::git::cli_parser::{ParsedGitInvocation, is_dry_run};
-use crate::git::repository::Repository;
+use crate::git::repository::{Repository, disable_internal_git_hooks};
 use crate::git::rewrite_log::RewriteLogEvent;
 use crate::utils::debug_log;
 
@@ -92,6 +95,77 @@ pub fn commit_post_command_hook(
             supress_output,
             true,
         );
+    }
+
+    // After initial note generation, try to append AI ratio to the commit message via an internal amend.
+    // Skip for dry-run, failed commits, merge commits, or very large commits where stats are expensive.
+    if let Some(current_sha) = repository.head().ok().and_then(|h| h.target().ok()) {
+        let is_merge = repository
+            .find_commit(current_sha.clone())
+            .map(|c| c.parent_count().unwrap_or(0) > 1)
+            .unwrap_or(false);
+        if !is_merge {
+            let ignore_patterns = effective_ignore_patterns(repository, &[], &[]);
+            let should_skip = estimate_stats_cost_for_head(repository, &current_sha, &ignore_patterns)
+                .ok()
+                .map(|e| e.should_skip())
+                .unwrap_or(false);
+            if !should_skip {
+                if let Ok(stats) = stats_for_commit_stats(repository, &current_sha, &ignore_patterns) {
+                    let total_additions = stats.human_additions.saturating_add(stats.ai_additions);
+                    if total_additions > 0 {
+                        let ai_pct =
+                            ((stats.ai_additions as f64 / total_additions as f64) * 100.0).round() as u32;
+
+                        // Read full commit message body
+                        let mut args = repository.global_args_for_exec();
+                        args.push("log".to_string());
+                        args.push("-1".to_string());
+                        args.push("--format=%B".to_string());
+                        args.push(current_sha.clone());
+                        if let Ok(output) = crate::git::repository::exec_git(&args) {
+                            if let Ok(msg) = String::from_utf8(output.stdout) {
+                                let msg_trimmed = msg.trim_end().to_string();
+                                let already_has = msg_trimmed.contains("[AI Contribution:");
+                                if !already_has {
+                                    let new_msg = format!(
+                                        "{}\n\n[AI Contribution: {}%]",
+                                        msg_trimmed, ai_pct
+                                    );
+
+                                    // Amend commit message without running hooks again
+                                    let _guard = disable_internal_git_hooks();
+                                    let mut amend_args = repository.global_args_for_exec();
+                                    amend_args.push("commit".to_string());
+                                    amend_args.push("--amend".to_string());
+                                    amend_args.push("-F".to_string());
+                                    amend_args.push("-".to_string());
+                                    if crate::git::repository::exec_git_stdin(&amend_args, new_msg.as_bytes())
+                                        .is_ok()
+                                    {
+                                        // Rewrite authorship notes to the amended commit
+                                        let amended_sha = repository
+                                            .head()
+                                            .ok()
+                                            .and_then(|h| h.target().ok());
+                                        if let Some(amended_sha) = amended_sha {
+                                            let commit_author =
+                                                get_commit_default_author(repository, &parsed_args.command_args);
+                                            repository.handle_rewrite_log_event(
+                                                RewriteLogEvent::commit_amend(current_sha, amended_sha),
+                                                commit_author,
+                                                supress_output,
+                                                true,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
