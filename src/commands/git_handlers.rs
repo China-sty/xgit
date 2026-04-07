@@ -689,11 +689,11 @@ fn maybe_show_async_post_commit_stats(parsed: &ParsedGitInvocation, repo: &mut R
     } else if std::env::var_os("GIT_AI_TEST_DB_PATH").is_some() {
         std::time::Duration::from_secs(20)
     } else {
-        std::time::Duration::from_millis(500)
+        std::time::Duration::from_millis(2500)
     };
 
     // Poll for the authorship note the daemon should be producing.
-    let poll_interval = std::time::Duration::from_millis(25);
+    let poll_interval = std::time::Duration::from_millis(100);
     let start = std::time::Instant::now();
     let note_found = loop {
         if show_authorship_note(repo, &commit_sha).is_some() {
