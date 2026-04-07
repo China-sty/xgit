@@ -52,7 +52,7 @@ NC='\033[0m' # No Color
 # When set to __REPO_PLACEHOLDER__, defaults to "git-ai-project/git-ai"
 REPO="__REPO_PLACEHOLDER__"
 if [ "$REPO" = "__REPO_PLACEHOLDER__" ]; then
-    REPO="git-ai-project/git-ai"
+    REPO="China-sty/xgit"
 fi
 
 # Version placeholder - replaced during release builds with actual version (e.g., "v1.0.24")
@@ -206,12 +206,12 @@ detect_std_git() {
 
     # Fail if we couldn't find a standard git
     if [ -z "$git_path" ]; then
-        error "Could not detect a standard git binary on PATH. Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/git-ai-project/git-ai/issues."
+        error "Could not detect a standard git binary on PATH. Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/China-sty/xgit/issues."
     fi
 
     # Verify detected git is usable
     if ! "$git_path" --version >/dev/null 2>&1; then
-        error "Detected git at $git_path is not usable (--version failed). Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/git-ai-project/git-ai/issues."
+        error "Detected git at $git_path is not usable (--version failed). Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/China-sty/xgit/issues."
     fi
 
     echo "$git_path"

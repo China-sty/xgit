@@ -204,7 +204,7 @@ function Verify-Checksum {
 # When set to __REPO_PLACEHOLDER__, defaults to "git-ai-project/git-ai"
 $Repo = '__REPO_PLACEHOLDER__'
 if ($Repo -eq '__REPO_PLACEHOLDER__') {
-    $Repo = 'git-ai-project/git-ai'
+    $Repo = 'China-sty/xgit'
 }
 
 # Version placeholder - replaced during release builds with actual version (e.g., "v1.0.24")
@@ -262,14 +262,14 @@ function Get-StdGitPath {
 
     # If still not found, fail with a clear message
     if (-not $gitPath) {
-        Write-ErrorAndExit "Could not detect a standard git binary on PATH. Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/git-ai-project/git-ai/issues."
+        Write-ErrorAndExit "Could not detect a standard git binary on PATH. Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/China-sty/xgit/issues."
     }
 
     try {
         & $gitPath --version | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'bad' }
     } catch {
-        Write-ErrorAndExit "Detected git at $gitPath is not usable (--version failed). Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/git-ai-project/git-ai/issues."
+        Write-ErrorAndExit "Detected git at $gitPath is not usable (--version failed). Please ensure you have Git installed and available on your PATH. If you believe this is a bug with the installer, please file an issue at https://github.com/China-sty/xgit/issues."
     }
 
     return $gitPath
