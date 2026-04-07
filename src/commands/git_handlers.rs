@@ -153,7 +153,7 @@ pub fn handle_git(args: &[String]) {
             debug_log(&format!("wrapper: daemon telemetry init failed: {}", e));
         }
 
-        let repository = find_repository(&parsed.global_args).ok();
+        let mut repository = find_repository(&parsed.global_args).ok();
         let worktree = repository.as_ref().and_then(|r| r.workdir().ok());
 
         let pre_state = worktree
@@ -177,7 +177,7 @@ pub fn handle_git(args: &[String]) {
         // authorship note so we can show stats inline (same UX as plain wrapper mode).
         if exit_status.success()
             && parsed.command.as_deref() == Some("commit")
-            && let Some(repo) = repository.as_ref()
+            && let Some(repo) = repository.as_mut()
         {
             maybe_show_async_post_commit_stats(&parsed, repo);
         }
@@ -648,7 +648,7 @@ fn resolve_child_git_hooks_path_override(
 /// In async (wrapper-to-daemon) mode, after a successful `git commit`, poll for
 /// the daemon-produced authorship note and display stats inline when available.
 /// Mirrors the same skip/display rules as plain wrapper mode in post_commit.rs.
-fn maybe_show_async_post_commit_stats(parsed: &ParsedGitInvocation, repo: &Repository) {
+fn maybe_show_async_post_commit_stats(parsed: &ParsedGitInvocation, repo: &mut Repository) {
     use crate::authorship::ignore::effective_ignore_patterns;
     use crate::authorship::stats::{stats_for_commit_stats, write_stats_to_terminal};
     use crate::git::cli_parser::is_dry_run;
@@ -774,7 +774,10 @@ fn maybe_show_async_post_commit_stats(parsed: &ParsedGitInvocation, repo: &Repos
                 };
 
                 let new_message = format!("{}\n\nai参与率: {}%", message, ai_rate);
+                // CRITICAL: We must prevent the background daemon from getting stuck in an infinite loop
+                // and we must prevent internal hooks from triggering another stats calculation
                 let _guard = crate::git::repository::disable_internal_git_hooks();
+                unsafe { std::env::set_var("GIT_AI_DISABLE_DAEMON", "1"); } // Ensure this commit doesn't wake the daemon
 
                 let mut amend_args = repo.global_args_for_exec();
                 amend_args.push("commit".to_string());
@@ -783,6 +786,21 @@ fn maybe_show_async_post_commit_stats(parsed: &ParsedGitInvocation, repo: &Repos
                 amend_args.push(new_message);
 
                 let _ = crate::git::repository::exec_git(&amend_args);
+                // Transfer the AI authorship note from the old SHA to the new amended SHA
+                if let Ok(new_sha) = repo.head().and_then(|h| h.target()) {
+                    if new_sha != commit_sha {
+                        // Suppress output so it's completely silent to the user
+                        repo.handle_rewrite_log_event(
+                            crate::git::rewrite_log::RewriteLogEvent::commit_amend(
+                                commit_sha.clone(), 
+                                new_sha
+                            ),
+                            String::new(), // Pass empty string as author
+                            true,
+                            true,
+                        );
+                    }
+                }
             }
         }
         // ----------------------------------------
