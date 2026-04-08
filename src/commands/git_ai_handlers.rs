@@ -177,6 +177,9 @@ pub fn handle_git_ai(args: &[String]) {
         "ci" => {
             commands::ci_handlers::handle_ci(&args[1..]);
         }
+        "update" => {
+            commands::update::run();
+        }
         "upgrade" => {
             commands::upgrade::run_with_args(&args[1..]);
         }
@@ -304,6 +307,7 @@ fn print_help() {
     );
     eprintln!("    --dry-run             Show what would be done without making changes");
     eprintln!("  git-path           Print the path to the underlying git executable");
+    eprintln!("  update             Update git-ai by fetching a remote script via PowerShell");
     eprintln!("  upgrade            Check for updates and install if available");
     eprintln!("    --force               Reinstall latest version even if already up to date");
     eprintln!("  prompts            Create local SQLite database for prompt analysis");
