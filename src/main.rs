@@ -1,3 +1,4 @@
+// Date: 2026-04-08
 use clap::Parser;
 use git_ai::commands;
 
