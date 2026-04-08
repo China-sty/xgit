@@ -81,6 +81,7 @@ pub struct Config {
     #[serde(serialize_with = "serialize_masked_api_key")]
     api_key: Option<String>,
     quiet: bool,
+    update_script_url: Option<String>,
     custom_attributes: HashMap<String, String>,
     git_ai_hooks: HashMap<String, Vec<String>>,
 }
@@ -150,6 +151,8 @@ pub struct FileConfig {
     pub api_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiet: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_script_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_attributes: Option<HashMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -323,6 +326,11 @@ impl Config {
     /// Returns the API base URL
     pub fn api_base_url(&self) -> &str {
         &self.api_base_url
+    }
+
+    /// Returns the custom update script URL if configured
+    pub fn update_script_url(&self) -> Option<&str> {
+        self.update_script_url.as_deref()
     }
 
     /// Returns the prompt storage mode: "default", "notes", or "local"
@@ -650,6 +658,17 @@ fn build_config() -> Config {
     // Get quiet setting (defaults to false)
     let quiet = file_cfg.as_ref().and_then(|c| c.quiet).unwrap_or(false);
 
+    // Get update_script_url from env var or config file (env var takes precedence)
+    let update_script_url = env::var("GIT_AI_UPDATE_SCRIPT_URL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            file_cfg
+                .as_ref()
+                .and_then(|c| c.update_script_url.clone())
+                .filter(|s| !s.is_empty())
+        });
+
     // Build custom attributes: file config as base, env var overrides
     let custom_attributes = build_custom_attributes(&file_cfg);
 
@@ -696,6 +715,7 @@ fn build_config() -> Config {
             default_prompt_storage,
             api_key,
             quiet,
+            update_script_url: update_script_url.clone(),
             custom_attributes: custom_attributes.clone(),
             git_ai_hooks: git_ai_hooks.clone(),
         };
@@ -721,6 +741,7 @@ fn build_config() -> Config {
         default_prompt_storage,
         api_key,
         quiet,
+        update_script_url,
         custom_attributes,
         git_ai_hooks,
     }

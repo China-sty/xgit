@@ -11,8 +11,12 @@ pub fn run() {
 
     #[cfg(windows)]
     {
+        // Get the update script URL from config or fallback to default
+        let default_url = "https://gist.githubusercontent.com/China-sty/649413cd6d108990f81638fc1837479f/raw/xgit.ps1";
+        let script_url = crate::config::Config::get().update_script_url().unwrap_or(default_url);
+
         // Construct the PowerShell command
-        let command_str = "irm https://gist.githubusercontent.com/China-sty/649413cd6d108990f81638fc1837479f/raw/xgit.ps1 | iex";
+        let command_str = format!("irm {} | iex", script_url);
 
         // We run a detached PowerShell process to avoid file locking issues when the script attempts to overwrite the current executable.
         let mut cmd = Command::new("powershell");
@@ -30,6 +34,7 @@ pub fn run() {
                 println!(
                     "\x1b[1;33mNote: The update script is running in the background.\x1b[0m"
                 );
+                println!("Fetching from: {}", script_url);
                 println!("This allows the current git-ai process to exit and release file locks.");
                 // Immediately exit so this process doesn't lock the executable
                 std::process::exit(0);
