@@ -105,6 +105,7 @@ fn print_config_help() {
     eprintln!("  disable_version_checks       Disable version checks (bool)");
     eprintln!("  disable_auto_updates         Disable auto updates (bool)");
     eprintln!("  update_channel               Update channel (latest/next)");
+    eprintln!("  update_script_url            Custom update script URL (string)");
     eprintln!("  feature_flags                Feature flags (object)");
     eprintln!("  api_key                      API key for X-API-Key header");
     eprintln!("  prompt_storage               Prompt storage mode (default/notes/local)");
@@ -373,6 +374,13 @@ fn get_config_value(key: &str) -> Result<(), String> {
             "disable_version_checks" => Value::Bool(runtime_config.version_checks_disabled()),
             "disable_auto_updates" => Value::Bool(runtime_config.auto_updates_disabled()),
             "update_channel" => Value::String(runtime_config.update_channel().as_str().to_string()),
+            "update_script_url" => {
+                if let Some(ref url) = file_config.update_script_url {
+                    Value::String(url.clone())
+                } else {
+                    Value::Null
+                }
+            }
             "feature_flags" => {
                 // Show effective flags with defaults applied
                 serde_json::to_value(runtime_config.get_feature_flags())
@@ -509,6 +517,11 @@ fn set_config_value(key: &str, value: &str, add_mode: bool) -> Result<(), String
                 file_config.update_channel = Some(value.to_string());
                 crate::config::save_file_config(&file_config)?;
                 eprintln!("[update_channel]: {}", value);
+            }
+            "update_script_url" => {
+                file_config.update_script_url = Some(value.to_string());
+                crate::config::save_file_config(&file_config)?;
+                eprintln!("[update_script_url]: {}", value);
             }
             "feature_flags" => {
                 if add_mode {
@@ -737,6 +750,13 @@ fn unset_config_value(key: &str) -> Result<(), String> {
                 crate::config::save_file_config(&file_config)?;
                 if let Some(v) = old_value {
                     eprintln!("- [update_channel]: {}", v);
+                }
+            }
+            "update_script_url" => {
+                let old_value = file_config.update_script_url.take();
+                crate::config::save_file_config(&file_config)?;
+                if let Some(v) = old_value {
+                    eprintln!("- [update_script_url]: {}", v);
                 }
             }
             "feature_flags" => {
