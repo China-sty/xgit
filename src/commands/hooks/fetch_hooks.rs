@@ -33,9 +33,9 @@ pub fn fetch_pull_pre_command_hook(
     let mut pre_fetch_args = repository.global_args_for_exec();
     pre_fetch_args.push("fetch".to_string());
     pre_fetch_args.push(remote.clone());
-    pre_fetch_args.push("refs/notes/*:refs/notes/*".to_string());
+    pre_fetch_args.push("refs/notes/ai:refs/notes/ai".to_string());
     
-    debug_log("Executing pre-pull/fetch with refs/notes/*");
+    debug_log("Executing pre-pull/fetch with refs/notes/ai");
     let _ = crate::git::repository::exec_git(&pre_fetch_args);
 
     // Clone what we need for the background thread
