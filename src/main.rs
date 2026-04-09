@@ -1,4 +1,5 @@
-// Date: 2026-04-08
+// Author:
+// Date: 2026-04-09
 use clap::Parser;
 use git_ai::commands;
 
