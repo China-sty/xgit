@@ -1,9 +1,89 @@
+use crate::authorship::stats::stats_for_commit_stats;
 use crate::commands::git_handlers::CommandHooksContext;
+use crate::commands::hooks::commit_hooks::get_commit_default_author;
 use crate::commands::upgrade;
 use crate::git::cli_parser::{ParsedGitInvocation, is_dry_run};
-use crate::git::repository::{Repository, find_repository};
+use crate::git::repository::{Repository, disable_internal_git_hooks, find_repository};
+use crate::git::rewrite_log::RewriteLogEvent;
 use crate::git::sync_authorship::push_authorship_notes;
 use crate::utils::debug_log;
+use std::sync::mpsc;
+use std::time::Duration;
+
+fn amend_commit_with_ai_rate(repository: &Repository) {
+    let Ok(head) = repository.head() else { return };
+    let Ok(head_sha) = head.target() else { return };
+    
+    let repo_clone = repository.clone();
+    let head_sha_clone = head_sha.clone();
+    
+    let (tx, rx) = mpsc::channel();
+    
+    std::thread::spawn(move || {
+        let stats = stats_for_commit_stats(&repo_clone, &head_sha_clone, &[]);
+        let _ = tx.send(stats);
+    });
+    
+    let ai_rate = match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(Ok(stats)) => {
+            let total = stats.human_additions + stats.ai_additions;
+            if total > 0 {
+                ((stats.ai_additions as f64 / total as f64) * 100.0).round() as u32
+            } else {
+                0
+            }
+        },
+        _ => 0,
+    };
+    
+    let append_line = format!("ai代码渗透率：{}%", ai_rate);
+    
+    let mut args = repository.global_args_for_exec();
+    args.push("log".to_string());
+    args.push("-1".to_string());
+    args.push("--format=%B".to_string());
+    args.push(head_sha.clone());
+    
+    if let Ok(output) = crate::git::repository::exec_git(&args) {
+        if let Ok(msg) = String::from_utf8(output.stdout) {
+            let msg = msg.trim_end();
+            if msg.contains(&append_line) {
+                return;
+            }
+            
+            let new_msg_lines: Vec<&str> = msg.lines().filter(|l| !l.starts_with("ai代码渗透率：")).collect();
+            let mut new_msg = new_msg_lines.join("\n");
+            new_msg.push_str("\n\n");
+            new_msg.push_str(&append_line);
+            new_msg.push_str("\n");
+            
+            let _disable_hooks_guard = disable_internal_git_hooks();
+            let mut amend_args = repository.global_args_for_exec();
+            amend_args.push("commit".to_string());
+            amend_args.push("--amend".to_string());
+            amend_args.push("-m".to_string());
+            amend_args.push(new_msg);
+            
+            debug_log(&format!("Amending commit with AI rate: {}", ai_rate));
+            if let Ok(_) = crate::git::repository::exec_git(&amend_args) {
+                let mut repo_for_rewrite = repository.clone();
+                if let Ok(new_head) = repo_for_rewrite.head() {
+                    if let Ok(new_sha) = new_head.target() {
+                        if new_sha != head_sha {
+                            let commit_author = get_commit_default_author(&repo_for_rewrite, &[]);
+                            repo_for_rewrite.handle_rewrite_log_event(
+                                RewriteLogEvent::commit_amend(head_sha, new_sha),
+                                commit_author,
+                                true,
+                                true,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 pub fn push_pre_command_hook(
     parsed_args: &ParsedGitInvocation,
@@ -15,6 +95,8 @@ pub fn push_pre_command_hook(
     if should_skip_authorship_push(&parsed_args.command_args) {
         return None;
     }
+
+    amend_commit_with_ai_rate(repository);
 
     // Intercept push to execute with "refs/notes/ai" first, as requested
     let mut pre_push_args = repository.global_args_for_exec();
