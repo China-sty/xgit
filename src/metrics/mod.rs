@@ -44,8 +44,14 @@ pub use types::{EventValues, METRICS_API_VERSION, MetricEvent, MetricsBatch};
 /// ```
 pub fn record<V: EventValues>(values: V, attrs: EventAttributes) {
     let event = MetricEvent::new(&values, attrs.to_sparse());
-    // Write directly to observability log
-    crate::observability::log_metrics(vec![event]);
+    
+    // Create the batch
+    let batch = crate::metrics::types::MetricsBatch::new(vec![event]);
+    
+    // Direct synchronous upload
+    let context = crate::api::client::ApiContext::new(None);
+    let client = crate::api::client::ApiClient::new(context);
+    let _ = client.upload_metrics(&batch); // Fire and forget (best effort)
 }
 
 #[cfg(test)]

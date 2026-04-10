@@ -563,13 +563,8 @@ fn enqueue_prompt_messages_to_cas(
         crate::authorship::authorship_log::PromptRecord,
     >,
 ) -> Result<(), GitAiError> {
-    use crate::authorship::internal_db::InternalDatabase;
-
-    let db = InternalDatabase::global()?;
-    let mut db_lock = db
-        .lock()
-        .map_err(|e| GitAiError::Generic(format!("Failed to lock database: {}", e)))?;
-
+    use sha2::{Digest, Sha256};
+    
     // CAS metadata for prompt messages
     let mut metadata = HashMap::new();
     metadata.insert("api_version".to_string(), "v1".to_string());
@@ -602,6 +597,8 @@ fn enqueue_prompt_messages_to_cas(
         Config::get().api_base_url().to_string()
     };
 
+    let mut cas_objects = Vec::new();
+
     for (_key, prompt) in prompts.iter_mut() {
         if !prompt.messages.is_empty() {
             // Wrap messages in CasMessagesObject and serialize to JSON
@@ -611,32 +608,32 @@ fn enqueue_prompt_messages_to_cas(
             let messages_json = serde_json::to_value(&messages_obj)
                 .map_err(|e| GitAiError::Generic(format!("Failed to serialize messages: {}", e)))?;
 
-            // Enqueue to CAS (returns hash)
-            let hash = db_lock.enqueue_cas_object(&messages_json, Some(&metadata))?;
-
-            let metadata_json = serde_json::to_string(&metadata).ok();
+            // Canonicalize JSON (RFC 8785)
             let canonical = serde_json_canonicalizer::to_string(&messages_json)
-                .unwrap_or_else(|_| messages_json.to_string());
-            let cas_payload = crate::daemon::control_api::CasSyncPayload {
-                hash: hash.clone(),
-                data: canonical,
-                metadata: metadata_json,
-            };
+                .map_err(|e| GitAiError::Generic(format!("Failed to canonicalize JSON: {}", e)))?;
 
-            // In daemon mode, submit directly to the in-process telemetry worker.
-            // In wrapper-daemon mode, forward over the control socket so the
-            // background daemon can upload it immediately.
-            if crate::daemon::daemon_process_active() {
-                let _ =
-                    crate::daemon::telemetry_worker::submit_daemon_internal_cas(vec![cas_payload]);
-            } else if crate::daemon::telemetry_handle::daemon_telemetry_available() {
-                crate::daemon::telemetry_handle::submit_cas(vec![cas_payload]);
-            }
+            // Hash the canonicalized content
+            let mut hasher = Sha256::new();
+            hasher.update(canonical.as_bytes());
+            let hash = format!("{:x}", hasher.finalize());
+
+            cas_objects.push(crate::api::types::CasObject {
+                content: messages_json,
+                hash: hash.clone(),
+                metadata: metadata.clone(),
+            });
 
             // Set full URL and clear messages
             prompt.messages_url = Some(format!("{}/cas/{}", api_base_url, hash));
             prompt.messages.clear();
         }
+    }
+
+    if !cas_objects.is_empty() {
+        let req = crate::api::types::CasUploadRequest { objects: cas_objects };
+        let context = crate::api::client::ApiContext::new(None);
+        let client = crate::api::client::ApiClient::new(context);
+        let _ = client.upload_cas(req); // Send synchronously
     }
 
     Ok(())
