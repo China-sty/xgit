@@ -29,15 +29,6 @@ pub fn fetch_pull_pre_command_hook(
         }
     };
 
-    // Intercept pull/fetch to fetch notes first, as requested
-    let mut pre_fetch_args = repository.global_args_for_exec();
-    pre_fetch_args.push("fetch".to_string());
-    pre_fetch_args.push(remote.clone());
-    pre_fetch_args.push("refs/notes/*:refs/notes/*".to_string());
-    
-    debug_log("Executing pre-pull/fetch with refs/notes/*");
-    let _ = crate::git::repository::exec_git(&pre_fetch_args);
-
     // Clone what we need for the background thread
     let global_args = repository.global_args_for_exec();
 

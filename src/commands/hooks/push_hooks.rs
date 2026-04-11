@@ -15,16 +15,6 @@ pub fn push_pre_command_hook(
     if should_skip_authorship_push(&parsed_args.command_args) {
         return None;
     }
-
-    // Intercept push to execute with "refs/notes/*" first, as requested
-    let mut pre_push_args = repository.global_args_for_exec();
-    pre_push_args.push("push".to_string());
-    pre_push_args.extend(parsed_args.command_args.clone());
-    pre_push_args.push("refs/notes/*".to_string());
-    
-    debug_log("Executing pre-push with refs/notes/*");
-    let _ = crate::git::repository::exec_git(&pre_push_args);
-
     let remote = resolve_push_remote(parsed_args, repository);
 
     if let Some(remote) = remote {
