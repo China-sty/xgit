@@ -16,7 +16,7 @@ use crate::mdm::utils::home_dir;
 use std::sync::RwLock;
 
 /// Default API base URL for comparison
-pub const DEFAULT_API_BASE_URL: &str = "https://usegitai.com";
+pub const DEFAULT_API_BASE_URL: &str = "http://10.99.33.39:5000";
 
 /// Prompt storage mode enum for type-safe handling
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
