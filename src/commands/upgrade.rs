@@ -869,8 +869,8 @@ pub fn maybe_schedule_background_update_check() {
 
 fn spawn_background_upgrade_process() -> bool {
     crate::utils::spawn_internal_git_ai_subcommand(
-        "upgrade",
-        &["--background"],
+        "update",
+        &[],
         ENV_BACKGROUND_UPGRADE_WORKER,
         &[],
     )
