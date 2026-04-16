@@ -275,6 +275,84 @@ function Get-StdGitPath {
     return $gitPath
 }
 
+function Find-GitBashExe {
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    $override = $env:GIT_AI_GIT_BASH_EXE
+    if ($override -and (Test-Path -LiteralPath $override)) {
+        $candidates.Add($override) | Out-Null
+    }
+
+    try {
+        $gitCmd = Get-Command git.exe -All -ErrorAction SilentlyContinue
+        # Iterate over all found git.exe, skipping our own shim
+        foreach ($cmd in $gitCmd) {
+            if ($cmd -and $cmd.Path -and ($cmd.Path -notmatch '(?i)\\.git-ai\\bin\\git\.exe$')) {
+                $gitPath = $cmd.Path
+                Write-Host "Found git.exe at: $gitPath" -ForegroundColor Gray
+                
+                # Try to find the 'Git' directory in the path
+                if ($gitPath -match '(?i)(.*\\Git)(?:\\.*|$)') {
+                    $gitRoot = $matches[1]
+                    Write-Host "Inferred Git root from git.exe path: $gitRoot" -ForegroundColor Gray
+                    Write-Host "Searching for bash.exe recursively in $gitRoot ..." -ForegroundColor Gray
+                    try {
+                        $foundBashes = Get-ChildItem -Path $gitRoot -Filter "bash.exe" -Recurse -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer }
+                        foreach ($fb in $foundBashes) {
+                            Write-Host "  -> Found candidate: $($fb.FullName)" -ForegroundColor DarkGray
+                            $candidates.Add($fb.FullName) | Out-Null
+                        }
+                    } catch {
+                        Write-Host "  -> Error searching in $gitRoot" -ForegroundColor DarkGray
+                    }
+                } else {
+                    # Fallback to structural inference if 'Git' isn't in the path string
+                    if ($gitPath -match '(?i)\\(cmd|bin)\\git\.exe$') {
+                        $gitRoot = Split-Path -Parent (Split-Path -Parent $gitPath)
+                        $candidates.Add((Join-Path $gitRoot 'bin\bash.exe')) | Out-Null
+                        $candidates.Add((Join-Path $gitRoot 'usr\bin\bash.exe')) | Out-Null
+                    } elseif ($gitPath -match '(?i)\\mingw64\\bin\\git\.exe$') {
+                        $gitRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $gitPath))
+                        $candidates.Add((Join-Path $gitRoot 'bin\bash.exe')) | Out-Null
+                        $candidates.Add((Join-Path $gitRoot 'usr\bin\bash.exe')) | Out-Null
+                    }
+                }
+                break # We found the real git, no need to check other commands
+            }
+        }
+    } catch { }
+
+    if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles 'Git\bin\bash.exe')) | Out-Null }
+    if (${env:ProgramFiles(x86)}) { $candidates.Add((Join-Path ${env:ProgramFiles(x86)} 'Git\bin\bash.exe')) | Out-Null }
+    if ($env:LOCALAPPDATA) { $candidates.Add((Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe')) | Out-Null }
+
+    try {
+        $bashCmds = Get-Command bash.exe -All -ErrorAction SilentlyContinue
+        foreach ($c in $bashCmds) {
+            if ($c -and $c.Path) { $candidates.Add($c.Path) | Out-Null }
+        }
+    } catch { }
+
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($p in $candidates) {
+        if (-not $p) { continue }
+        $full = $null
+        try { $full = [IO.Path]::GetFullPath($p) } catch { $full = $p }
+        if (-not $seen.Add($full.ToLowerInvariant())) { continue }
+        if (-not (Test-Path -LiteralPath $full)) { continue }
+        if ($full -notmatch '(?i)\\bin\\bash\.exe$') { continue }
+        
+        # Windows Subsystem for Linux (WSL) usually has its bash in System32. 
+        # We explicitly exclude it here to avoid treating WSL bash as Git Bash.
+        if ($full -match '(?i)\\System32\\bash\.exe$') { continue }
+        
+        # We assume if it's named \bin\bash.exe and not in System32, it's our target.
+        return $full
+    }
+
+    return $null
+}
+
 # Ensure $PathToAdd is inserted before any PATH entry that contains "git" (case-insensitive)
 # Updates Machine (system) PATH; if not elevated, emits a prominent error with instructions
 function Set-PathPrependBeforeGit {
@@ -565,15 +643,12 @@ try {
 
     # Detect if Git Bash is installed
     $gitBashInstalled = $false
-    $gitForWindowsPaths = @()
-    if ($env:ProgramFiles) { $gitForWindowsPaths += Join-Path $env:ProgramFiles 'Git\bin\bash.exe' }
-    if (${env:ProgramFiles(x86)}) { $gitForWindowsPaths += Join-Path ${env:ProgramFiles(x86)} 'Git\bin\bash.exe' }
-    if ($env:LOCALAPPDATA) { $gitForWindowsPaths += Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe' }
-    foreach ($p in $gitForWindowsPaths) {
-        if ($p -and (Test-Path -LiteralPath $p)) {
-            $gitBashInstalled = $true
-            break
-        }
+    $gitBashExe = Find-GitBashExe
+    if ($gitBashExe) { 
+        $gitBashInstalled = $true 
+        Write-Host "Found Git Bash at: $gitBashExe" -ForegroundColor Cyan
+    } else {
+        Write-Host "Warning: Could not find Git Bash (bash.exe) installation path. Git Bash profile will not be configured." -ForegroundColor Yellow
     }
 
     if ($gitBashInstalled) {
