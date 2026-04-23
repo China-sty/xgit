@@ -1,0 +1,56 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.13",
+  "base_commit_sha": "785aa9c50e7408494de4413e8ebba5ff5871d7b1",
+  "prompts": {
+    "319b80c55b1ad6ae": {
+      "agent_id": {
+        "tool": "github-copilot-jetbrains",
+        "id": "1775614612434",
+        "model": "unknown"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "gpt-5.2"
+      },
+      "human_author": "shaoty1 <shaoty1@xiaopeng.com>",
+      "messages": [
+        {
+          "type": "user",
+          "text": "group_push.py ???????????????????????????????????????????????????????"
+        },
+        {
+          "type": "assistant",
+          "text": "????????????"
+        }
+      ],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 569,
+      "overriden_lines": 0
+    },
+    "8f1047e627e83237": {
+      "agent_id": {
+        "tool": "github-copilot-jetbrains",
+        "id": "1776391973093",
+        "model": "unknown"
+      },
+      "human_author": "shaoty1 <shaoty1@xiaopeng.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
