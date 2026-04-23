@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.12",
+  "base_commit_sha": "8298ed77f4e3d7582c027179a970cb3ff662e01a",
+  "prompts": {
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "gpt-5.2"
+      },
+      "human_author": "shaoty1 <shaoty1@xiaopeng.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 710,
+      "overriden_lines": 0
+    }
+  }
+}
