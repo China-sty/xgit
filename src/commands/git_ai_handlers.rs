@@ -8,7 +8,7 @@ use crate::commands;
 use crate::commands::checkpoint_agent::agent_presets::{
     AgentCheckpointFlags, AgentCheckpointPreset, AgentRunResult, AiTabPreset, ClaudePreset,
     CodexPreset, ContinueCliPreset, CursorPreset, DroidPreset, GeminiPreset, GithubCopilotPreset,
-    WindsurfPreset,
+    QoderPreset, WindsurfPreset,
 };
 use crate::commands::checkpoint_agent::agent_v1_preset::AgentV1Preset;
 use crate::commands::checkpoint_agent::amp_preset::AmpPreset;
