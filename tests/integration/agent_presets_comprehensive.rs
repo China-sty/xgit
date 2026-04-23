@@ -1,7 +1,7 @@
 use git_ai::authorship::working_log::CheckpointKind;
 use git_ai::commands::checkpoint_agent::agent_presets::{
     AgentCheckpointFlags, AgentCheckpointPreset, AiTabPreset, ClaudePreset, CodexPreset,
-    ContinueCliPreset, CursorPreset, DroidPreset, GeminiPreset, GithubCopilotPreset,
+    ContinueCliPreset, CursorPreset, DroidPreset, GeminiPreset, GithubCopilotPreset, QoderPreset,
 };
 use git_ai::commands::checkpoint_agent::amp_preset::AmpPreset;
 use git_ai::error::GitAiError;
@@ -1008,6 +1008,7 @@ fn test_all_presets_handle_missing_hook_input_consistently() {
         Box::new(AmpPreset),
         Box::new(DroidPreset),
         Box::new(AiTabPreset),
+        Box::new(QoderPreset),
     ];
 
     for preset in presets {

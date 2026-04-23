@@ -35,6 +35,72 @@ pub trait AgentCheckpointPreset {
     fn run(&self, flags: AgentCheckpointFlags) -> Result<AgentRunResult, GitAiError>;
 }
 
+// Qoder to checkpoint preset
+pub struct QoderPreset;
+
+impl AgentCheckpointPreset for QoderPreset {
+    fn run(&self, flags: AgentCheckpointFlags) -> Result<AgentRunResult, GitAiError> {
+        let stdin_json = flags.hook_input.ok_or_else(|| {
+            GitAiError::PresetError("hook_input is required for Qoder preset".to_string())
+        })?;
+
+        let hook_data: serde_json::Value = serde_json::from_str(&stdin_json)
+            .map_err(|e| GitAiError::PresetError(format!("Invalid JSON in hook_input: {}", e)))?;
+
+        let cwd = hook_data
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| GitAiError::PresetError("cwd not found in hook_input".to_string()))?;
+
+        let session_id = hook_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown-session");
+
+        let hook_event_name = hook_data
+            .get("hook_event_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("PostToolUse");
+
+        let mut edited_filepaths = None;
+        if let Some(file_path) = hook_data.pointer("/tool_input/file_path").and_then(|v| v.as_str())
+        {
+            edited_filepaths = Some(vec![file_path.to_string()]);
+        }
+
+        // Qoder transcript logic placeholder
+        let transcript = crate::authorship::transcript::AiTranscript::new();
+        let model = Some("qoder-model".to_string());
+
+        Ok(AgentRunResult {
+            agent_id: AgentId {
+                tool: "qoder".to_string(),
+                id: session_id.to_string(),
+                model: model.unwrap_or_else(|| "unknown".to_string()),
+            },
+            agent_metadata: None,
+            checkpoint_kind: if hook_event_name == "PreToolUse" {
+                CheckpointKind::Human
+            } else {
+                CheckpointKind::AiAgent
+            },
+            transcript: Some(transcript),
+            repo_working_dir: Some(cwd.to_string()),
+            edited_filepaths: if hook_event_name == "PostToolUse" {
+                edited_filepaths.clone()
+            } else {
+                None
+            },
+            will_edit_filepaths: if hook_event_name == "PreToolUse" {
+                edited_filepaths
+            } else {
+                None
+            },
+            dirty_files: None,
+        })
+    }
+}
+
 // Claude Code to checkpoint preset
 pub struct ClaudePreset;
 
@@ -150,6 +216,72 @@ impl AgentCheckpointPreset for ClaudePreset {
             repo_working_dir: Some(cwd.to_string()),
             edited_filepaths: file_path_as_vec,
             will_edit_filepaths: None,
+            dirty_files: None,
+        })
+    }
+}
+
+// Qoder to checkpoint preset
+pub struct QoderPreset;
+
+impl AgentCheckpointPreset for QoderPreset {
+    fn run(&self, flags: AgentCheckpointFlags) -> Result<AgentRunResult, GitAiError> {
+        let stdin_json = flags.hook_input.ok_or_else(|| {
+            GitAiError::PresetError("hook_input is required for Qoder preset".to_string())
+        })?;
+
+        let hook_data: serde_json::Value = serde_json::from_str(&stdin_json)
+            .map_err(|e| GitAiError::PresetError(format!("Invalid JSON in hook_input: {}", e)))?;
+
+        let cwd = hook_data
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| GitAiError::PresetError("cwd not found in hook_input".to_string()))?;
+
+        let session_id = hook_data
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown-session");
+
+        let hook_event_name = hook_data
+            .get("hook_event_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("PostToolUse");
+
+        let mut edited_filepaths = None;
+        if let Some(file_path) = hook_data.pointer("/tool_input/file_path").and_then(|v| v.as_str())
+        {
+            edited_filepaths = Some(vec![file_path.to_string()]);
+        }
+
+        // Qoder transcript logic placeholder
+        let transcript = crate::authorship::transcript::AiTranscript::new();
+        let model = Some("qoder-model".to_string());
+
+        Ok(AgentRunResult {
+            agent_id: AgentId {
+                tool: "qoder".to_string(),
+                id: session_id.to_string(),
+                model: model.unwrap_or_else(|| "unknown".to_string()),
+            },
+            agent_metadata: None,
+            checkpoint_kind: if hook_event_name == "PreToolUse" {
+                CheckpointKind::Human
+            } else {
+                CheckpointKind::AiAgent
+            },
+            transcript: Some(transcript),
+            repo_working_dir: Some(cwd.to_string()),
+            edited_filepaths: if hook_event_name == "PostToolUse" {
+                edited_filepaths.clone()
+            } else {
+                None
+            },
+            will_edit_filepaths: if hook_event_name == "PreToolUse" {
+                edited_filepaths
+            } else {
+                None
+            },
             dirty_files: None,
         })
     }

@@ -575,6 +575,22 @@ fn handle_checkpoint(args: &[String]) {
                     }
                 }
             }
+            "qoder" => {
+                match QoderPreset.run(AgentCheckpointFlags {
+                    hook_input: hook_input.clone(),
+                }) {
+                    Ok(agent_run) => {
+                        if agent_run.repo_working_dir.is_some() {
+                            repository_working_dir = agent_run.repo_working_dir.clone().unwrap();
+                        }
+                        agent_run_result = Some(agent_run);
+                    }
+                    Err(e) => {
+                        eprintln!("Qoder preset error: {}", e);
+                        std::process::exit(0);
+                    }
+                }
+            }
             "opencode" => {
                 match OpenCodePreset.run(AgentCheckpointFlags {
                     hook_input: hook_input.clone(),
