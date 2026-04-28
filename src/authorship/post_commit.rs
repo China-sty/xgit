@@ -260,16 +260,7 @@ pub fn post_commit_with_final_state(
 
     if skip_reason.is_none() {
         let computed = stats_for_commit_stats(repo, &commit_sha, &ignore_patterns)?;
-        // Record metrics only when we have full stats.
-        record_commit_metrics(
-            repo,
-            &commit_sha,
-            &parent_sha,
-            &human_author,
-            &authorship_log,
-            &computed,
-            &parent_working_log,
-        );
+        // We DO NOT record metrics here anymore. It will be done during push.
         stats = Some(computed);
     } else {
         match skip_reason.as_ref() {
@@ -641,7 +632,7 @@ fn enqueue_prompt_messages_to_cas(
 
 /// Record metrics for a committed change.
 /// This is a best-effort operation - failures are silently ignored.
-fn record_commit_metrics(
+pub fn record_commit_metrics(
     repo: &Repository,
     commit_sha: &str,
     parent_sha: &str,

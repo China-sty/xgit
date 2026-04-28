@@ -68,7 +68,7 @@ pub fn run_pre_push_hook_managed(parsed_args: &ParsedGitInvocation, repository: 
 pub fn push_post_command_hook(
     _repository: &Repository,
     _parsed_args: &ParsedGitInvocation,
-    _exit_status: std::process::ExitStatus,
+    exit_status: std::process::ExitStatus,
     command_hooks_context: &mut CommandHooksContext,
 ) {
     // Always wait for the authorship push thread to complete if it was started,
@@ -76,6 +76,15 @@ pub fn push_post_command_hook(
     // This ensures proper cleanup of the background thread.
     if let Some(handle) = command_hooks_context.push_authorship_handle.take() {
         let _ = handle.join();
+    }
+
+    if exit_status.success() {
+        crate::utils::spawn_internal_git_ai_subcommand(
+            "upload-head-metrics",
+            &[],
+            "GIT_AI_BACKGROUND_METRICS_WORKER",
+            &[],
+        );
     }
 }
 
