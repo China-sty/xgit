@@ -1,0 +1,23 @@
+src/commands/checkpoint_agent/agent_presets.rs
+  af9ee4c9d0f1a84b 204,216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.13",
+  "base_commit_sha": "ecd7c5f8aaa563988d4bfc78438ae4b4e6a37711",
+  "prompts": {
+    "8f1047e627e83237": {
+      "agent_id": {
+        "tool": "github-copilot-jetbrains",
+        "id": "1776391973093",
+        "model": "unknown"
+      },
+      "human_author": "shaoty1 <shaoty1@xiaopeng.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}

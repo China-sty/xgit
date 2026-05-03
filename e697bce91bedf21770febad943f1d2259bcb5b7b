@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.4",
+  "base_commit_sha": "e697bce91bedf21770febad943f1d2259bcb5b7b",
+  "prompts": {
+    "319b80c55b1ad6ae": {
+      "agent_id": {
+        "tool": "github-copilot-jetbrains",
+        "id": "1775614612434",
+        "model": "unknown"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 1,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    }
+  }
+}

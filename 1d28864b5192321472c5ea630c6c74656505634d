@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.13",
+  "base_commit_sha": "1d28864b5192321472c5ea630c6c74656505634d",
+  "prompts": {
+    "e7173a4b96bcc825": {
+      "agent_id": {
+        "tool": "qoder",
+        "id": "test-qoder-session-001",
+        "model": "qoder-model"
+      },
+      "human_author": "shaoty1 <shaoty1@xiaopeng.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
