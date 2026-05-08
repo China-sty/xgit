@@ -52,9 +52,8 @@ impl MetricsDatabase {
                 Ok(db) => Mutex::new(db),
                 Err(e) => {
                     eprintln!("[Error] Failed to initialize metrics database: {}", e);
-                    // Create a dummy connection that will fail on any operation
-                    let temp_path = std::env::temp_dir().join("git-ai-metrics-db-failed");
-                    let conn = Connection::open(&temp_path).expect("Failed to create temp DB");
+                    // Create an in-memory database to allow the program to continue without locking errors
+                    let conn = Connection::open_in_memory().expect("Failed to create in-memory DB");
                     Mutex::new(MetricsDatabase { conn })
                 }
             }
