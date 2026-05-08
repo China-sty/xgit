@@ -1,0 +1,25 @@
+src/authorship/internal_db.rs
+  48074a0db5d90cdf 294-295,298
+src/metrics/db.rs
+  48074a0db5d90cdf 55-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.15",
+  "base_commit_sha": "f8aa9c821d01e2e4ee9ceab97de121e84389fe3c",
+  "prompts": {
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "Gemini-3.1-Pro-Preview"
+      },
+      "human_author": "shaoty1 <shaoty1@xiaopeng.com>",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 8,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  }
+}
