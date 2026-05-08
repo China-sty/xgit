@@ -112,14 +112,11 @@ impl InternalDatabase {
                         &e,
                         Some(serde_json::json!({"function": "InternalDatabase::global"})),
                     );
-                    // Create a dummy connection that will fail on any operation
-                    // This allows the program to continue even if DB init fails
-                    let temp_path = std::env::temp_dir().join("git-ai-db-failed");
-                    let conn = crate::sqlite::open_with_memory_limits(&temp_path)
-                        .expect("Failed to create temp DB");
+                    // Create an in-memory database to allow the program to continue without locking errors
+                    let conn = Connection::open_in_memory().expect("Failed to create in-memory DB");
                     Mutex::new(InternalDatabase {
                         conn,
-                        _db_path: temp_path,
+                        _db_path: PathBuf::from(":memory:"),
                     })
                 }
             }

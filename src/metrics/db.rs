@@ -174,13 +174,15 @@ impl MetricsDatabase {
 
     /// Get or initialize the global database
     pub fn global() -> Result<&'static Mutex<MetricsDatabase>, GitAiError> {
-        let db_mutex = METRICS_DB.get_or_init(|| match Self::new() {
-            Ok(db) => Mutex::new(db),
-            Err(e) => {
-                eprintln!("[Error] Failed to initialize metrics database: {}", e);
-                Mutex::new(
-                    Self::new_fallback().expect("Failed to create fallback metrics database"),
-                )
+        let db_mutex = METRICS_DB.get_or_init(|| {
+            match Self::new() {
+                Ok(db) => Mutex::new(db),
+                Err(e) => {
+                    eprintln!("[Error] Failed to initialize metrics database: {}", e);
+                    // Create an in-memory database to allow the program to continue without locking errors
+                    let conn = Connection::open_in_memory().expect("Failed to create in-memory DB");
+                    Mutex::new(MetricsDatabase { conn })
+                }
             }
         });
 
