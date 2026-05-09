@@ -1098,7 +1098,8 @@ fn apply_push_side_effect(
     let parsed = parsed_invocation_for_side_effect(command, args);
     push_hooks::run_pre_push_hook_managed(&parsed, &repo);
 
-    crate::utils::spawn_internal_git_ai_subcommand(
+    crate::utils::spawn_internal_git_ai_subcommand_in_dir(
+        Some(worktree),
         "upload-head-metrics",
         &[],
         "GIT_AI_BACKGROUND_METRICS_WORKER",

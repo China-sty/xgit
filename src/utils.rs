@@ -77,7 +77,8 @@ fn internal_git_ai_command_with_exe(exe: PathBuf, subcommand: &str) -> Command {
     cmd
 }
 
-pub fn spawn_internal_git_ai_subcommand(
+pub fn spawn_internal_git_ai_subcommand_in_dir(
+    cwd: Option<&str>,
     subcommand: &str,
     extra_args: &[&str],
     guard_env: &str,
@@ -97,11 +98,24 @@ pub fn spawn_internal_git_ai_subcommand(
     for (key, value) in extra_env {
         cmd.env(key, value);
     }
+    
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
 
     cmd.stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .is_ok()
+}
+
+pub fn spawn_internal_git_ai_subcommand(
+    subcommand: &str,
+    extra_args: &[&str],
+    guard_env: &str,
+    extra_env: &[(&str, &str)],
+) -> bool {
+    spawn_internal_git_ai_subcommand_in_dir(None, subcommand, extra_args, guard_env, extra_env)
 }
 
 pub fn is_interactive_terminal() -> bool {
