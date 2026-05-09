@@ -310,8 +310,6 @@ pub fn push_authorship_notes(repository: &Repository, remote_name: &str) -> Resu
             );
         }
 
-        fetch_and_merge_tracking_notes(repository, remote_name);
-
         // Push notes without force (requires fast-forward)
         let push_args = build_authorship_push_args(repository.global_args_for_exec(), remote_name);
 
@@ -334,60 +332,6 @@ pub fn push_authorship_notes(repository: &Repository, remote_name: &str) -> Resu
 
     Err(last_error
         .unwrap_or_else(|| GitAiError::Generic("notes push exhausted retries".to_string())))
-}
-
-/// Fetch remote notes into a tracking ref and merge into local refs/notes/ai.
-fn fetch_and_merge_tracking_notes(repository: &Repository, remote_name: &str) {
-    let tracking_ref = tracking_ref_for_remote(remote_name);
-    let fetch_refspec = format!("+refs/notes/ai:{}", tracking_ref);
-
-    let fetch_args = build_authorship_fetch_args(
-        repository.global_args_for_exec(),
-        remote_name,
-        &fetch_refspec,
-    );
-
-    tracing::debug!("pre-push authorship fetch: {:?}", &fetch_args);
-
-    // Fetch is best-effort; if it fails (e.g., no remote notes yet), continue
-    if exec_git(&fetch_args).is_err() {
-        return;
-    }
-
-    let local_notes_ref = "refs/notes/ai";
-
-    if !ref_exists(repository, &tracking_ref) {
-        return;
-    }
-
-    if !ref_exists(repository, local_notes_ref) {
-        // Only tracking ref exists - copy it to local
-        tracing::debug!(
-            "pre-push: initializing {} from {}",
-            local_notes_ref,
-            tracking_ref
-        );
-        if let Err(e) = copy_ref(repository, &tracking_ref, local_notes_ref) {
-            tracing::debug!("pre-push notes copy failed: {}", e);
-        }
-        return;
-    }
-
-    // Both exist - merge them
-    tracing::debug!(
-        "pre-push: merging {} into {}",
-        tracking_ref,
-        local_notes_ref
-    );
-    if let Err(e) = merge_notes_from_ref(repository, &tracking_ref) {
-        tracing::debug!("pre-push notes merge failed: {}", e);
-        // Fallback: manually merge notes when git notes merge crashes
-        // (e.g., due to corrupted/mixed-fanout notes trees, or git bugs
-        // with fanout-level mismatches on older git versions like macOS)
-        if let Err(e2) = fallback_merge_notes_ours(repository, &tracking_ref) {
-            tracing::debug!("pre-push fallback merge also failed: {}", e2);
-        }
-    }
 }
 
 fn is_non_fast_forward_error(error: &GitAiError) -> bool {
