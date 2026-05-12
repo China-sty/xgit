@@ -13,12 +13,26 @@ use crate::transcripts::types::TranscriptError;
 use crate::transcripts::watermark::WatermarkType;
 use chrono::{TimeZone, Utc};
 use std::collections::{BinaryHeap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Notify;
 use tokio::time::{Duration, interval};
 
 const PROCESSING_TICK_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Extract a Unix-epoch u32 timestamp from a raw JSON event's "timestamp" field.
+/// Handles both ISO 8601 strings (e.g. "2026-05-11T23:13:12.819Z") and numeric
+/// milliseconds (e.g. 1759845073835). Returns None if the field is missing or unparseable.
+pub fn extract_event_timestamp(event: &serde_json::Value) -> Option<u32> {
+    let ts_val = event.get("timestamp")?;
+    if let Some(s) = ts_val.as_str() {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|dt| dt.timestamp() as u32)
+    } else {
+        ts_val.as_u64().map(|ms| (ms / 1000) as u32)
+    }
+}
 
 /// Priority levels for processing tasks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -212,20 +226,135 @@ impl TranscriptWorker {
             .unwrap_or_else(|_| notification.transcript_path.clone());
 
         // Deduplicate via in_flight
-        if self.in_flight.contains(&canonical_path) {
+        if !self.in_flight.contains(&canonical_path) {
+            self.priority_queue.push(ProcessingTask {
+                priority: Priority::Immediate,
+                session_id: notification.session_id.clone(),
+                tool: notification.tool.clone(),
+                trace_id: Some(notification.trace_id.clone()),
+                canonical_path,
+                repo_work_dir: notification.repo_work_dir.clone(),
+                retry_count: 0,
+                next_retry_at: None,
+            });
+        }
+
+        // Sweep subagent transcripts for this main session (Claude only for now)
+        if notification.tool == "claude" {
+            self.sweep_subagents_for_session(&notification);
+        }
+    }
+
+    /// Discover and enqueue subagent transcripts belonging to a main Claude session.
+    ///
+    /// Given a main session at `<project>/<uuid>.jsonl`, subagents live at
+    /// `<project>/<uuid>/subagents/agent-*.jsonl`.
+    fn sweep_subagents_for_session(&mut self, notification: &CheckpointNotification) {
+        let transcript_path = &notification.transcript_path;
+
+        let subagents_dir = match transcript_path.file_stem() {
+            Some(stem) => transcript_path.with_file_name(stem).join("subagents"),
+            None => return,
+        };
+
+        if !subagents_dir.is_dir() {
             return;
         }
 
-        self.priority_queue.push(ProcessingTask {
-            priority: Priority::Immediate,
-            session_id: notification.session_id,
-            tool: notification.tool,
-            trace_id: Some(notification.trace_id),
-            canonical_path,
-            repo_work_dir: notification.repo_work_dir,
-            retry_count: 0,
-            next_retry_at: None,
-        });
+        let Ok(entries) = std::fs::read_dir(&subagents_dir) else {
+            return;
+        };
+
+        let external_parent_session_id = transcript_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string());
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension().map(|ext| ext == "jsonl") != Some(true) {
+                continue;
+            }
+
+            let Some(external_session_id) = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+            else {
+                continue;
+            };
+
+            let session_id = generate_session_id(&external_session_id, "claude");
+
+            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if self.in_flight.contains(&canonical) {
+                continue;
+            }
+
+            // Ensure the subagent session exists in the DB
+            if let Err(e) = self.ensure_subagent_session(
+                &session_id,
+                &path,
+                &external_session_id,
+                external_parent_session_id.as_deref(),
+                notification.repo_work_dir.as_deref(),
+            ) {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "failed to ensure subagent session exists"
+                );
+                continue;
+            }
+
+            self.priority_queue.push(ProcessingTask {
+                priority: Priority::Low,
+                session_id,
+                tool: "claude".to_string(),
+                trace_id: Some(notification.trace_id.clone()),
+                canonical_path: canonical,
+                repo_work_dir: notification.repo_work_dir.clone(),
+                retry_count: 0,
+                next_retry_at: None,
+            });
+        }
+    }
+
+    fn ensure_subagent_session(
+        &self,
+        session_id: &str,
+        path: &Path,
+        external_session_id: &str,
+        external_parent_session_id: Option<&str>,
+        repo_work_dir: Option<&Path>,
+    ) -> Result<(), TranscriptError> {
+        if self.transcripts_db.get_session(session_id)?.is_some() {
+            return Ok(());
+        }
+
+        use crate::transcripts::db::SessionRecord;
+        use crate::transcripts::watermark::{ByteOffsetWatermark, WatermarkStrategy};
+
+        let initial_watermark = ByteOffsetWatermark::new(0);
+        let record = SessionRecord {
+            session_id: session_id.to_string(),
+            tool: "claude".to_string(),
+            transcript_path: path.display().to_string(),
+            transcript_format: "ClaudeJsonl".to_string(),
+            watermark_type: "ByteOffset".to_string(),
+            watermark_value: initial_watermark.serialize(),
+            external_session_id: external_session_id.to_string(),
+            external_parent_session_id: external_parent_session_id.map(|s| s.to_string()),
+            first_seen_at: chrono::Utc::now().timestamp(),
+            last_processed_at: 0,
+            last_known_size: 0,
+            last_modified: None,
+            processing_errors: 0,
+            last_error: None,
+            repo_work_dir: repo_work_dir.map(|p| p.display().to_string()),
+        };
+
+        self.transcripts_db.insert_session(&record)
     }
 
     /// Process the next task from the queue.
@@ -353,6 +482,10 @@ impl TranscriptWorker {
             base_attrs = base_attrs.repo_url(url);
         }
 
+        let file_meta = std::fs::metadata(&path).ok();
+        let is_initial_watermark =
+            session.watermark_value.is_empty() || session.watermark_value == "0";
+
         loop {
             let batch = agent.read_incremental(&path, current_watermark, &session.session_id)?;
 
@@ -366,13 +499,27 @@ impl TranscriptWorker {
             let metric_events: Vec<MetricEvent> = batch
                 .events
                 .into_iter()
-                .map(|raw_event| {
+                .enumerate()
+                .map(|(idx, raw_event)| {
                     let (eid, pid, tid) = agent.extract_event_ids(&raw_event);
+                    let is_first_event = is_initial_watermark && total_events == 0 && idx == 0;
+                    let event_ts = match &file_meta {
+                        Some(meta) => {
+                            agent.extract_event_timestamp(&raw_event, meta, is_first_event)
+                        }
+                        None => extract_event_timestamp(&raw_event).unwrap_or_else(|| {
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs() as u32
+                        }),
+                    };
                     let trace_id = task.trace_id.clone().unwrap_or_else(generate_trace_id);
                     let attrs_sparse = base_attrs.clone().trace_id(trace_id).to_sparse();
-                    MetricEvent::from_values(
+                    MetricEvent::from_values_with_timestamp(
                         SessionEventValues::with_ids(raw_event, eid, pid, tid),
                         attrs_sparse,
+                        Some(event_ts),
                     )
                 })
                 .collect();
@@ -561,4 +708,232 @@ pub fn spawn_transcript_worker(
     });
 
     TranscriptWorkerHandle { checkpoint_tx }
+}
+
+#[cfg(test)]
+mod extract_event_timestamp_tests {
+    use super::*;
+
+    #[test]
+    fn test_rfc3339() {
+        let event = serde_json::json!({"timestamp": "2026-05-11T23:13:12.819Z"});
+        assert_eq!(extract_event_timestamp(&event), Some(1778541192));
+    }
+
+    #[test]
+    fn test_rfc3339_without_millis() {
+        let event = serde_json::json!({"timestamp": "2026-05-12T00:21:05Z"});
+        assert_eq!(extract_event_timestamp(&event), Some(1778545265));
+    }
+
+    #[test]
+    fn test_rfc3339_subsecond_discarded() {
+        let event = serde_json::json!({"timestamp": "2026-05-11T23:13:12.999Z"});
+        assert_eq!(extract_event_timestamp(&event), Some(1778541192));
+    }
+
+    #[test]
+    fn test_numeric_millis() {
+        let event = serde_json::json!({"timestamp": 1759845073835u64});
+        assert_eq!(extract_event_timestamp(&event), Some(1759845073));
+    }
+
+    #[test]
+    fn test_missing_field() {
+        let event = serde_json::json!({"type": "user.message"});
+        assert_eq!(extract_event_timestamp(&event), None);
+    }
+
+    #[test]
+    fn test_null_value() {
+        let event = serde_json::json!({"timestamp": null});
+        assert_eq!(extract_event_timestamp(&event), None);
+    }
+
+    #[test]
+    fn test_invalid_string() {
+        let event = serde_json::json!({"timestamp": "not-a-date"});
+        assert_eq!(extract_event_timestamp(&event), None);
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let event = serde_json::json!({"timestamp": ""});
+        assert_eq!(extract_event_timestamp(&event), None);
+    }
+}
+
+#[cfg(test)]
+mod subagent_sweep_tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    fn make_worker(db: Arc<TranscriptsDatabase>) -> TranscriptWorker {
+        let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let shutdown = Arc::new(Notify::new());
+        let telemetry = DaemonTelemetryWorkerHandle::new_noop();
+        TranscriptWorker::new(db, telemetry, shutdown, rx)
+    }
+
+    #[test]
+    fn test_sweep_subagents_discovers_subagent_files() {
+        let tmp = TempDir::new().unwrap();
+
+        // Create a main session transcript: <project>/sess-abc.jsonl
+        let project_dir = tmp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let main_transcript = project_dir.join("sess-abc.jsonl");
+        let mut f = std::fs::File::create(&main_transcript).unwrap();
+        writeln!(f, r#"{{"type":"session","id":"sess-abc"}}"#).unwrap();
+
+        // Create subagents directory: <project>/sess-abc/subagents/
+        let subagents_dir = project_dir.join("sess-abc").join("subagents");
+        std::fs::create_dir_all(&subagents_dir).unwrap();
+
+        // Create two subagent transcripts
+        let sub1 = subagents_dir.join("agent-sub1.jsonl");
+        let mut f = std::fs::File::create(&sub1).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"message","message":{{"role":"user","content":"hi"}}}}"#
+        )
+        .unwrap();
+
+        let sub2 = subagents_dir.join("agent-sub2.jsonl");
+        let mut f = std::fs::File::create(&sub2).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"message","message":{{"role":"assistant","content":"hello"}}}}"#
+        )
+        .unwrap();
+
+        // Also create a .meta.json file that should be ignored
+        let meta = subagents_dir.join("agent-sub1.meta.json");
+        std::fs::File::create(&meta).unwrap();
+
+        // Set up worker with DB
+        let db_path = tmp.path().join("test.db");
+        let db = Arc::new(TranscriptsDatabase::open(&db_path).unwrap());
+        let mut worker = make_worker(db.clone());
+
+        let notification = CheckpointNotification {
+            session_id: "internal-sess-abc".to_string(),
+            tool: "claude".to_string(),
+            trace_id: "trace-1".to_string(),
+            transcript_path: main_transcript.clone(),
+            repo_work_dir: Some(tmp.path().to_path_buf()),
+        };
+
+        worker.sweep_subagents_for_session(&notification);
+
+        // Should have enqueued 2 subagent tasks
+        assert_eq!(worker.priority_queue.len(), 2);
+
+        // Both should be in the DB
+        let sub1_sid = generate_session_id("agent-sub1", "claude");
+        let sub2_sid = generate_session_id("agent-sub2", "claude");
+
+        let rec1 = db.get_session(&sub1_sid).unwrap().unwrap();
+        assert_eq!(rec1.external_session_id, "agent-sub1");
+        assert_eq!(rec1.external_parent_session_id.as_deref(), Some("sess-abc"));
+        assert_eq!(rec1.tool, "claude");
+
+        let rec2 = db.get_session(&sub2_sid).unwrap().unwrap();
+        assert_eq!(rec2.external_session_id, "agent-sub2");
+        assert_eq!(rec2.external_parent_session_id.as_deref(), Some("sess-abc"));
+    }
+
+    #[test]
+    fn test_sweep_subagents_no_dir_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let main_transcript = tmp.path().join("sess-xyz.jsonl");
+        let mut f = std::fs::File::create(&main_transcript).unwrap();
+        writeln!(f, r#"{{"type":"session"}}"#).unwrap();
+
+        let db_path = tmp.path().join("test.db");
+        let db = Arc::new(TranscriptsDatabase::open(&db_path).unwrap());
+        let mut worker = make_worker(db.clone());
+
+        let notification = CheckpointNotification {
+            session_id: "internal-sess-xyz".to_string(),
+            tool: "claude".to_string(),
+            trace_id: "trace-2".to_string(),
+            transcript_path: main_transcript,
+            repo_work_dir: None,
+        };
+
+        worker.sweep_subagents_for_session(&notification);
+        assert_eq!(worker.priority_queue.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_checkpoint_skips_subagent_sweep_for_non_claude() {
+        let tmp = TempDir::new().unwrap();
+        let main_transcript = tmp.path().join("sess-abc.jsonl");
+        std::fs::File::create(&main_transcript).unwrap();
+
+        let subagents_dir = tmp.path().join("sess-abc").join("subagents");
+        std::fs::create_dir_all(&subagents_dir).unwrap();
+        let sub = subagents_dir.join("agent-sub1.jsonl");
+        let mut f = std::fs::File::create(&sub).unwrap();
+        writeln!(f, r#"{{"type":"message"}}"#).unwrap();
+
+        let db_path = tmp.path().join("test.db");
+        let db = Arc::new(TranscriptsDatabase::open(&db_path).unwrap());
+        let mut worker = make_worker(db.clone());
+
+        let notification = CheckpointNotification {
+            session_id: "internal-sess-abc".to_string(),
+            tool: "copilot".to_string(),
+            trace_id: "trace-3".to_string(),
+            transcript_path: main_transcript,
+            repo_work_dir: None,
+        };
+
+        worker.handle_checkpoint_notification(notification).await;
+
+        // Only the main session should be enqueued — no subagent sweep for copilot
+        assert_eq!(worker.priority_queue.len(), 1);
+        let task = worker.priority_queue.pop().unwrap();
+        assert_eq!(task.session_id, "internal-sess-abc");
+        assert_eq!(task.tool, "copilot");
+    }
+
+    #[test]
+    fn test_sweep_subagents_deduplicates_in_flight() {
+        let tmp = TempDir::new().unwrap();
+        let project_dir = tmp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let main_transcript = project_dir.join("sess-dup.jsonl");
+        std::fs::File::create(&main_transcript).unwrap();
+
+        let subagents_dir = project_dir.join("sess-dup").join("subagents");
+        std::fs::create_dir_all(&subagents_dir).unwrap();
+        let sub = subagents_dir.join("agent-inflight.jsonl");
+        let mut f = std::fs::File::create(&sub).unwrap();
+        writeln!(f, r#"{{"type":"message"}}"#).unwrap();
+
+        let db_path = tmp.path().join("test.db");
+        let db = Arc::new(TranscriptsDatabase::open(&db_path).unwrap());
+        let mut worker = make_worker(db.clone());
+
+        // Mark the subagent's canonical path as in-flight
+        let canonical = std::fs::canonicalize(&sub).unwrap();
+        worker.in_flight.insert(canonical);
+
+        let notification = CheckpointNotification {
+            session_id: "internal-sess-dup".to_string(),
+            tool: "claude".to_string(),
+            trace_id: "trace-4".to_string(),
+            transcript_path: main_transcript,
+            repo_work_dir: None,
+        };
+
+        worker.sweep_subagents_for_session(&notification);
+
+        // Should not enqueue the in-flight subagent
+        assert_eq!(worker.priority_queue.len(), 0);
+    }
 }

@@ -251,6 +251,17 @@ impl Agent for DroidAgent {
             new_watermark,
         })
     }
+
+    fn extract_event_timestamp(
+        &self,
+        event: &serde_json::Value,
+        file_meta: &std::fs::Metadata,
+        is_first_event: bool,
+    ) -> u32 {
+        crate::daemon::transcript_worker::extract_event_timestamp(event).unwrap_or_else(|| {
+            crate::transcripts::agent::file_time_fallback(file_meta, is_first_event)
+        })
+    }
 }
 
 #[cfg(test)]

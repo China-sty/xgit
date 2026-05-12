@@ -137,6 +137,13 @@ pub struct DaemonTelemetryWorkerHandle {
 }
 
 impl DaemonTelemetryWorkerHandle {
+    #[cfg(test)]
+    pub fn new_noop() -> Self {
+        Self {
+            buffer: Arc::new(Mutex::new(TelemetryBuffer::new())),
+        }
+    }
+
     /// Submit telemetry envelopes for batched processing.
     pub async fn submit_telemetry(&self, envelopes: Vec<TelemetryEnvelope>) {
         self.buffer.lock().await.ingest_envelopes(envelopes);

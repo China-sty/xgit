@@ -169,6 +169,15 @@ impl Agent for ContinueAgent {
             new_watermark,
         })
     }
+
+    fn extract_event_timestamp(
+        &self,
+        _event: &serde_json::Value,
+        file_meta: &std::fs::Metadata,
+        is_first_event: bool,
+    ) -> u32 {
+        crate::transcripts::agent::file_time_fallback(file_meta, is_first_event)
+    }
 }
 
 #[cfg(test)]
