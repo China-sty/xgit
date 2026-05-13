@@ -104,9 +104,9 @@ function Stop-GitAiManagedProcesses {
     $pids = @($processes | Sort-Object ProcessId -Unique | Select-Object -ExpandProperty ProcessId)
     Write-Warning ("Stopping lingering git-ai processes: {0}" -f ($pids -join ', '))
 
-    foreach ($pid in $pids) {
+    foreach ($processId in $pids) {
         try {
-            Stop-Process -Id $pid -Force -ErrorAction Stop
+            Stop-Process -Id $processId -Force -ErrorAction Stop
         } catch { }
     }
 
@@ -710,6 +710,58 @@ try {
     }
 } catch {
     Write-Host "Warning: Failed to write config.json: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
+# Configure Claude Code Git Bash path
+if ($gitBashExe) {
+    try {
+        $claudeSettingsPath = Join-Path $HOME '.claude\settings.json'
+        $claudeDir = Split-Path $claudeSettingsPath
+        if (-not (Test-Path -LiteralPath $claudeDir)) {
+            New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
+        }
+
+        $content = "{}"
+        if (Test-Path -LiteralPath $claudeSettingsPath) {
+            $fileContent = Get-Content -LiteralPath $claudeSettingsPath -Raw -ErrorAction SilentlyContinue
+            if (-not [string]::IsNullOrWhiteSpace($fileContent)) {
+                $content = $fileContent
+            }
+        }
+
+        $claudeSettings = $content | ConvertFrom-Json
+        $updated = $false
+
+        $hasEnv = [bool]($claudeSettings.psobject.properties.match('env').Count)
+        if (-not $hasEnv) {
+            $claudeSettings | Add-Member -MemberType NoteProperty -Name 'env' -Value (New-Object PSObject)
+            $updated = $true
+        } else {
+            # Ensure env is a PSObject so we can use Add-Member
+            if ($claudeSettings.env -isnot [System.Management.Automation.PSObject]) {
+                $newEnv = New-Object PSObject
+                $claudeSettings.env.psobject.properties | ForEach-Object {
+                    $newEnv | Add-Member -MemberType NoteProperty -Name $_.Name -Value $_.Value
+                }
+                $claudeSettings.env = $newEnv
+            }
+        }
+
+        $envProps = Get-Member -InputObject $claudeSettings.env -MemberType Properties | Select-Object -ExpandProperty Name
+        if ($envProps -notcontains 'CLAUDE_CODE_GIT_BASH_PATH') {
+            $claudeSettings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_GIT_BASH_PATH' -Value $gitBashExe
+            $updated = $true
+        }
+
+        if ($updated) {
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            $newContent = $claudeSettings | ConvertTo-Json -Depth 20
+            [System.IO.File]::WriteAllText($claudeSettingsPath, $newContent, $utf8NoBom)
+            Write-Host "Configured CLAUDE_CODE_GIT_BASH_PATH in ~/.claude/settings.json" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "Warning: Failed to update Claude settings: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
 }
 
 Write-Host 'Close and reopen your terminal and IDE sessions to use git-ai.' -ForegroundColor Yellow
