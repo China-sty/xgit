@@ -99,10 +99,10 @@ jobs:
               grep -F "checkpoint claude" "$HOME/.claude/settings.json"
               ;;
             codex)
-              # Codex writes a feature flag to config.toml and the actual hook
-              # commands to hooks.json (separate file since the hooks refactor).
-              grep -F "codex_hooks" "$HOME/.codex/config.toml"
-              grep -F "checkpoint" "$HOME/.codex/hooks.json"
+              # Codex writes inline hooks directly in config.toml (no separate hooks.json).
+              # The feature flag is [features].hooks = true.
+              grep -F 'hooks = true' "$HOME/.codex/config.toml"
+              grep -F "checkpoint codex" "$HOME/.codex/config.toml"
               ;;
             gemini)
               grep -F "checkpoint gemini" "$HOME/.gemini/settings.json"
@@ -259,12 +259,11 @@ jobs:
               if (-not (Select-String -Path $settings -Pattern "checkpoint claude")) { throw "Claude hooks not configured" }
             }
             "codex" {
-              # Codex writes a feature flag to config.toml and the actual hook
-              # commands to hooks.json (separate file since the hooks refactor).
+              # Codex writes inline hooks directly in config.toml (no separate hooks.json).
+              # The feature flag is [features].hooks = true.
               $config = Join-Path $env:USERPROFILE ".codex\config.toml"
-              if (-not (Select-String -Path $config -Pattern "codex_hooks")) { throw "Codex feature flag not set in config.toml" }
-              $hooks = Join-Path $env:USERPROFILE ".codex\hooks.json"
-              if (-not (Select-String -Path $hooks -Pattern "checkpoint")) { throw "Codex hooks not configured in hooks.json" }
+              if (-not (Select-String -Path $config -Pattern "hooks = true")) { throw "Codex hooks feature flag not set in config.toml" }
+              if (-not (Select-String -Path $config -Pattern "checkpoint codex")) { throw "Codex hooks not configured in config.toml" }
             }
             "gemini" {
               $settings = Join-Path $env:USERPROFILE ".gemini\settings.json"
