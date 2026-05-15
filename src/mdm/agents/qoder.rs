@@ -1,7 +1,7 @@
 use crate::error::GitAiError;
 use crate::mdm::hook_installer::{HookCheckResult, HookInstaller, HookInstallerParams};
 use crate::mdm::utils::{
-    binary_exists, generate_diff, home_dir, is_git_ai_checkpoint_command, to_git_bash_path,
+    binary_exists, generate_diff, home_dir, is_git_ai_checkpoint_command, to_windows_git_bash_style_path,
     write_atomic,
 };
 use serde_json::{Value, json};
@@ -114,17 +114,17 @@ impl HookInstaller for QoderInstaller {
         };
 
         // Build commands with absolute path
-        let binary_path_str = to_git_bash_path(&params.binary_path);
+        let binary_path_str = to_windows_git_bash_style_path(&params.binary_path);
         let pre_tool_cmd = format!("{} {}", binary_path_str, QODER_PRE_TOOL_CMD);
         let post_tool_cmd = format!("{} {}", binary_path_str, QODER_POST_TOOL_CMD);
 
         let desired_hooks = json!({
             "PreToolUse": {
-                "matcher": "Write | Edit",
+                "matcher": "Write|Edit|MultiEdit",
                 "desired_cmd": pre_tool_cmd,
             },
             "PostToolUse": {
-                "matcher": "Write | Edit",
+                "matcher": "Write|Edit|MultiEdit",
                 "desired_cmd": post_tool_cmd,
             }
         });
@@ -145,7 +145,7 @@ impl HookInstaller for QoderInstaller {
                 .cloned()
                 .unwrap_or_default();
 
-            // Find existing matcher block for Write | Edit
+            // Find existing matcher block for Write|Edit|MultiEdit
             let mut found_matcher_idx: Option<usize> = None;
             for (idx, item) in hook_type_array.iter().enumerate() {
                 if let Some(matcher) = item.get("matcher").and_then(|m| m.as_str())
