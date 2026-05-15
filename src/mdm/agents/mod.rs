@@ -10,6 +10,7 @@ mod github_copilot;
 mod jetbrains;
 mod opencode;
 mod pi;
+mod qoder;
 #[cfg(windows)]
 mod visual_studio;
 mod vscode;
@@ -27,6 +28,7 @@ pub use github_copilot::GitHubCopilotInstaller;
 pub use jetbrains::JetBrainsInstaller;
 pub use opencode::OpenCodeInstaller;
 pub use pi::PiInstaller;
+pub use qoder::QoderInstaller;
 #[cfg(windows)]
 pub use visual_studio::VisualStudioInstaller;
 pub use vscode::VSCodeInstaller;
@@ -46,6 +48,7 @@ pub fn get_all_installers() -> Vec<Box<dyn HookInstaller>> {
         Box::new(AmpInstaller),
         Box::new(OpenCodeInstaller),
         Box::new(PiInstaller),
+        Box::new(QoderInstaller),
         Box::new(GeminiInstaller),
         Box::new(DroidInstaller),
         Box::new(FirebenderInstaller),
