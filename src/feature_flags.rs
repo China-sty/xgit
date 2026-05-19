@@ -87,6 +87,9 @@ define_feature_flags!(
     bash_checkpoints_v2: bash_checkpoints_v2, debug = false, release = false,
     daemon_log_upload: daemon_log_upload, debug = true, release = true,
     rewrite_metrics_events: rewrite_metrics_events, debug = true, release = false,
+    async_mode: async_mode, debug = true, release = true,
+    git_hooks_enabled: git_hooks_enabled, debug = false, release = false,
+    git_hooks_externally_managed: git_hooks_externally_managed, debug = false, release = false,
 );
 
 impl FeatureFlags {
@@ -143,6 +146,9 @@ mod tests {
             assert!(!flags.bash_checkpoints_v2);
             assert!(flags.daemon_log_upload);
             assert!(flags.rewrite_metrics_events);
+            assert!(flags.async_mode);
+            assert!(!flags.git_hooks_enabled);
+            assert!(!flags.git_hooks_externally_managed);
         }
         #[cfg(not(debug_assertions))]
         {
