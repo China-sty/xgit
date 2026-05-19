@@ -499,6 +499,30 @@ if ($env:INSTALL_NONCE -and $env:API_BASE) {
     }
 }
 
+# Force feature flag defaults (overrides any existing config.json values)
+try {
+    $configDir = Join-Path $HOME '.git-ai'
+    $configJsonPath = Join-Path $configDir 'config.json'
+    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+
+    if (-not (Test-Path -LiteralPath $configJsonPath)) {
+        $cfg = @{
+            git_path = $stdGitPath
+            feature_flags = @{
+                async_mode = $true
+                rewrite_stash = $true
+            }
+        } | ConvertTo-Json -Depth 3 -Compress
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($configJsonPath, $cfg, $utf8NoBom)
+    } else {
+        & $finalExe config set feature_flags.async_mode true | Out-Host
+        & $finalExe config set feature_flags.rewrite_stash true | Out-Host
+    }
+} catch {
+    Write-Host "Warning: Failed to update config.json defaults: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
 # Install hooks
 Write-Host 'Setting up IDE/agent hooks...'
 try {
@@ -595,26 +619,6 @@ if ($gitBashConfigured) {
     Write-Success "Successfully configured Git Bash ($targetBashConfig)"
 } elseif ($gitBashAlreadyConfigured) {
     Write-Success "Git Bash already configured ($targetBashConfig)"
-}
-
-# Write JSON config at %USERPROFILE%\.git-ai\config.json (only if it doesn't exist)
-try {
-    $configDir = Join-Path $HOME '.git-ai'
-    $configJsonPath = Join-Path $configDir 'config.json'
-    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
-
-    if (-not (Test-Path -LiteralPath $configJsonPath)) {
-        $cfg = @{
-            git_path = $stdGitPath
-            feature_flags = @{
-                async_mode = $true
-            }
-        } | ConvertTo-Json -Depth 3 -Compress
-        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($configJsonPath, $cfg, $utf8NoBom)
-    }
-} catch {
-    Write-Host "Warning: Failed to write config.json: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 # Configure Claude Code Git Bash path
