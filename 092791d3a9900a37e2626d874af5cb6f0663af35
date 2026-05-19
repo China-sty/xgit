@@ -1,0 +1,64 @@
+install.sh
+  48074a0db5d90cdf 337,342-345,351-352,359-371
+install.ps1
+  48074a0db5d90cdf 593-616
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.20",
+  "base_commit_sha": "092791d3a9900a37e2626d874af5cb6f0663af35",
+  "prompts": {
+    "2e9553a09ac6b986": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session-test",
+        "model": "local-test"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 470,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "2ec1f0991e92f2ea": {
+      "agent_id": {
+        "tool": "qoder",
+        "id": "unknown-session",
+        "model": "qoder-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "TraeAI-3"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 521,
+      "total_deletions": 39,
+      "accepted_lines": 1094,
+      "overriden_lines": 0
+    },
+    "af148a72f44321e9": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session-test-2",
+        "model": "local-test"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 470,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    }
+  }
+}
