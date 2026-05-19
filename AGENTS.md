@@ -87,7 +87,7 @@ Signal forwarding: On Unix, the git proxy installs signal handlers (SIGTERM, SIG
 
 `Config` is a global `OnceLock` singleton accessed via `Config::get()`. It reads from `~/.git-ai/config.json`. In tests, `GIT_AI_TEST_CONFIG_PATCH` env var allows overriding specific config fields without a real config file. Feature flags follow precedence: environment vars (`GIT_AI_*` prefix via `envy`) > config file > defaults.
 
-Feature flags have separate debug/release defaults defined via the `define_feature_flags!` macro in `src/feature_flags.rs`. Currently: `auth_keyring` (false/false), `transcript_streaming` (true/true), `transcript_sweep` (true/true), `checkpoint_debug_log` (false/false), `daemon_log_upload` (true/true).
+Feature flags have separate debug/release defaults defined via the `define_feature_flags!` macro in `src/feature_flags.rs`. Currently: `rewrite_stash` (debug=true, release=true), `inter_commit_move` (false/false), `auth_keyring` (false/false), `transcript_streaming` (true/true), `transcript_sweep` (true/true), `checkpoint_debug_log` (false/false), `daemon_log_upload` (true/true).
 
 ### Error handling
 
@@ -236,6 +236,12 @@ Uses `insta` crate. Snapshots live in `tests/integration/snapshots/` and `tests/
 - Before stopping, ensure every submitted pull request passes all CI checks and all Devin review feedback has been addressed and resolved.
 
 ## Gotchas
+
+- **Stash rewriting side effects**: `rewrite_stash` writes stash attributions to `refs/notes/ai-stash` and migrates working-log state across stash/push/apply. This can add overhead to `git stash` in large repos.
+
+- **Working log base commit**: Working logs are keyed by the HEAD commit at checkpoint time (`.git/ai/working_logs/<sha>/`). If HEAD changes between checkpoint and commit (e.g., rebase), the post-commit hook must find and reconcile the correct working log.
+
+- **Large source files**: Several core files exceed 50K-100K lines. `rebase_authorship.rs` (~119K), `agent_presets.rs` (~101K), `repository.rs` (~96K), `attribution_tracker.rs` (~87K). Navigate with grep, not scrolling.
 
 - **Test binary auto-compilation**: Integration tests trigger `cargo build --bin git-ai` on first test run via `OnceLock`. If you change code and run tests, the test harness recompiles. This can cause confusion if you're debugging -- the test binary is always a debug build at `target/debug/git-ai`.
 
