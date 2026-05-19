@@ -17,6 +17,12 @@ pub fn run() {
         // Construct the PowerShell command
         let command_str = format!("irm {} | iex", script_url);
 
+        if let Ok(daemon_config) = crate::daemon::DaemonConfig::from_env_or_default_paths() {
+            // Best effort: stop the daemon before we hand off to the detached installer.
+            // This prevents file locking issues on Windows when the script attempts to overwrite the executable.
+            let _ = crate::commands::daemon::stop_daemon(&daemon_config, std::time::Duration::from_secs(10));
+        }
+
         // We run a detached PowerShell process to avoid file locking issues when the script attempts to overwrite the current executable.
         let mut cmd = Command::new("powershell");
         cmd.arg("-NoProfile")
@@ -54,6 +60,11 @@ pub fn run() {
 
         // Construct the bash command
         let command_str = format!("curl -sSL {} | bash", script_url);
+
+        if let Ok(daemon_config) = crate::daemon::DaemonConfig::from_env_or_default_paths() {
+            // Best effort: stop the daemon before we hand off to the detached installer.
+            let _ = crate::commands::daemon::stop_daemon(&daemon_config, std::time::Duration::from_secs(10));
+        }
 
         let mut cmd = Command::new("bash");
         cmd.arg("-c").arg(command_str);
