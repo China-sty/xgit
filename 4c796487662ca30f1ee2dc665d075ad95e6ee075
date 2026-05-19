@@ -1,0 +1,38 @@
+AGENTS.md
+  48074a0db5d90cdf 78,137
+src/feature_flags.rs
+  48074a0db5d90cdf 55,139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.19",
+  "base_commit_sha": "4c796487662ca30f1ee2dc665d075ad95e6ee075",
+  "prompts": {
+    "2ec1f0991e92f2ea": {
+      "agent_id": {
+        "tool": "qoder",
+        "id": "unknown-session",
+        "model": "qoder-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "solo"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 1045,
+      "total_deletions": 4,
+      "accepted_lines": 1045,
+      "overriden_lines": 0
+    }
+  }
+}
