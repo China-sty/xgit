@@ -1,0 +1,34 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.20",
+  "base_commit_sha": "27f6a9b653e5cdc169708efae2a156cbf33ee5a4",
+  "prompts": {
+    "2ec1f0991e92f2ea": {
+      "agent_id": {
+        "tool": "qoder",
+        "id": "unknown-session",
+        "model": "qoder-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "TraeAI-3"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 936,
+      "total_deletions": 0,
+      "accepted_lines": 1510,
+      "overriden_lines": 0
+    }
+  }
+}
