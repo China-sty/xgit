@@ -334,6 +334,28 @@ success "You can now run 'git-ai' from your terminal"
 INSTALLED_VERSION=$(${INSTALL_DIR}/git-ai --version 2>&1 || echo "unknown")
 echo "Installed git-ai ${INSTALLED_VERSION}"
 
+# Force feature flag defaults (overrides any existing config.json values)
+CONFIG_DIR="$HOME/.git-ai"
+CONFIG_JSON_PATH="$CONFIG_DIR/config.json"
+mkdir -p "$CONFIG_DIR"
+
+if [ -f "$CONFIG_JSON_PATH" ]; then
+    "${INSTALL_DIR}/git-ai" config set feature_flags.async_mode true || true
+    "${INSTALL_DIR}/git-ai" config set feature_flags.rewrite_stash true || true
+else
+    TMP_CFG="$CONFIG_JSON_PATH.tmp.$$"
+    cat >"$TMP_CFG" <<EOF
+{
+  "git_path": "${STD_GIT_PATH}",
+  "feature_flags": {
+    "async_mode": true,
+    "rewrite_stash": true
+  }
+}
+EOF
+    mv -f "$TMP_CFG" "$CONFIG_JSON_PATH"
+fi
+
 # Login user with install token if provided
 NEED_LOGIN=false
 if [ -n "${INSTALL_NONCE:-}" ] && [ -n "${API_BASE:-}" ]; then
@@ -347,24 +369,6 @@ if ! ${INSTALL_DIR}/git-ai install-hooks; then
     warn "Warning: Failed to set up IDE/agent hooks. Please try running 'git-ai install-hooks' manually."
 else
     success "Successfully set up IDE/agent hooks"
-fi
-
-# Write JSON config at ~/.git-ai/config.json (only if it doesn't exist)
-CONFIG_DIR="$HOME/.git-ai"
-CONFIG_JSON_PATH="$CONFIG_DIR/config.json"
-mkdir -p "$CONFIG_DIR"
-
-if [ ! -f "$CONFIG_JSON_PATH" ]; then
-    TMP_CFG="$CONFIG_JSON_PATH.tmp.$$"
-    cat >"$TMP_CFG" <<EOF
-{
-  "git_path": "${STD_GIT_PATH}",
-  "feature_flags": {
-    "async_mode": true
-  }
-}
-EOF
-    mv -f "$TMP_CFG" "$CONFIG_JSON_PATH"
 fi
 
 # Add to PATH in all detected shell configurations
