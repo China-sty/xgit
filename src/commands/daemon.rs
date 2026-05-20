@@ -551,8 +551,12 @@ fn hard_kill_daemon(config: &DaemonConfig) -> Result<(), String> {
 #[cfg(windows)]
 fn hard_kill_daemon(config: &DaemonConfig) -> Result<(), String> {
     let pid = read_daemon_pid(config).map_err(|e| format!("cannot read daemon pid: {}", e))?;
+    
+    // Prevent suicide: Do not use /T (tree kill) if the daemon is our parent/ancestor.
+    // In scenarios like `git-ai update` triggered by a background job, killing the tree
+    // will kill this very process before it can finish.
     let output = Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .args(["/F", "/PID", &pid.to_string()])
         .output()
         .map_err(|e| format!("failed to run taskkill: {}", e))?;
     if !output.status.success() {
@@ -560,7 +564,7 @@ fn hard_kill_daemon(config: &DaemonConfig) -> Result<(), String> {
         // Process already dead is not an error.
         if !stderr.contains("not found") {
             return Err(format!(
-                "taskkill /F /T /PID {} failed: {}",
+                "taskkill /F /PID {} failed: {}",
                 pid,
                 stderr.trim()
             ));

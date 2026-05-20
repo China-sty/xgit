@@ -20,7 +20,9 @@ pub fn run() {
         if let Ok(daemon_config) = crate::daemon::DaemonConfig::from_env_or_default_paths() {
             // Best effort: stop the daemon before we hand off to the detached installer.
             // This prevents file locking issues on Windows when the script attempts to overwrite the executable.
-            let _ = crate::commands::daemon::stop_daemon(&daemon_config, std::time::Duration::from_secs(10));
+            // We use a short timeout (3s) to avoid making the user feel like the CLI is hung.
+            println!("Stopping background daemon...");
+            let _ = crate::commands::daemon::stop_daemon(&daemon_config, std::time::Duration::from_secs(3));
         }
 
         // We run a detached PowerShell process to avoid file locking issues when the script attempts to overwrite the current executable.
