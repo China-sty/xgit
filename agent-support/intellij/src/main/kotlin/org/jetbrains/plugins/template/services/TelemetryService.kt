@@ -6,8 +6,11 @@ import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
-import com.intellij.openapi.extensions.PluginId
+import com.posthog.java.HttpSender
 import com.posthog.java.PostHog as PostHogClient
+import com.posthog.java.QueueManager
+import com.posthog.java.Sender
+import com.posthog.java.shaded.org.json.JSONObject
 import io.sentry.Hint
 import io.sentry.Sentry
 import io.sentry.SentryEvent
@@ -84,13 +87,44 @@ class TelemetryService : Disposable {
                 return
             }
 
-            posthog = PostHogClient.Builder(POSTHOG_API_KEY)
+            val httpSender = HttpSender.Builder(POSTHOG_API_KEY)
                 .host(POSTHOG_HOST)
+                .build()
+            val safeSender = SafeSender(httpSender)
+            val queueManager = QueueManager.Builder(safeSender).build()
+
+            posthog = PostHogClient.BuilderWithCustomQueueManager(queueManager, safeSender)
                 .build()
 
             logger.info("PostHog initialized with distinct_id: $distinctId")
         } catch (e: Exception) {
             logger.warn("Failed to initialize PostHog: ${e.message}")
+        }
+    }
+
+    /**
+     * Wraps a PostHog Sender to prevent network exceptions from propagating
+     * as uncaught exceptions on the QueueManager background thread.
+     */
+    private class SafeSender(private val delegate: Sender) : Sender {
+        private val logger = com.intellij.openapi.diagnostic.Logger.getInstance(SafeSender::class.java)
+
+        override fun send(messages: List<JSONObject>): Boolean? {
+            return try {
+                delegate.send(messages)
+            } catch (e: Exception) {
+                logger.info("PostHog send failed (non-critical): ${e.javaClass.simpleName}")
+                null
+            }
+        }
+
+        override fun post(url: String, body: String): JSONObject? {
+            return try {
+                delegate.post(url, body)
+            } catch (e: Exception) {
+                logger.info("PostHog post failed (non-critical): ${e.javaClass.simpleName}")
+                null
+            }
         }
     }
 
@@ -153,12 +187,7 @@ class TelemetryService : Disposable {
 
     private fun getPluginVersion(): String {
         return try {
-            // Use reflection to call PluginId.getId() to avoid Kotlin companion object
-            // bytecode that doesn't exist in older IntelliJ versions (pre-252)
-            val pluginIdClass = Class.forName("com.intellij.openapi.extensions.PluginId")
-            val getIdMethod = pluginIdClass.getMethod("getId", String::class.java)
-            val pluginId = getIdMethod.invoke(null, PLUGIN_ID) as? PluginId
-            pluginId?.let { PluginManager.getPlugin(it)?.version } ?: "unknown"
+            PluginManager.getPluginByClass(this::class.java)?.version ?: "unknown"
         } catch (e: Exception) {
             "unknown"
         }
