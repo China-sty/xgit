@@ -13,10 +13,11 @@ Once installed, it automatically links every AI-written line to the agent, model
 
 ```
 [hooks-doctor 0afe44b2] wsl compat check
+2 files changed, 81 insertions(+), 3 deletions(-)
+```
 
-> git ai stats
-
- 2 files changed, 81 insertions(+), 3 deletions(-)
+`git ai stats`
+```
 you  ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ ai
      6%             mixed   2%             92%
 ```
