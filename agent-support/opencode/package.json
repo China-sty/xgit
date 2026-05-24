@@ -13,6 +13,9 @@
   "devDependencies": {
     "@types/node": "^25.x",
     "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "uuid": ">=14.0.0"
   }
 }
 
