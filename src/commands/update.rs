@@ -49,11 +49,11 @@ pub fn run() {
     {
         println!("Starting update via bash...");
         // Get the update script URL from config or fallback to default
-        let default_url = "https://gist.githubusercontent.com/China-sty/3977a3abe1aff04f5090908b8494751f/raw/xgit.sh";
+        let default_url = "http://10.99.33.39:8080/release_linux/script/install_inner.sh";
         let script_url = crate::config::Config::get().update_script_url().unwrap_or(default_url);
 
         // Construct the bash command
-        let command_str = format!("curl -sSL {} | bash", script_url);
+        let command_str = format!("curl -s {} | bash", script_url);
 
         let mut cmd = Command::new("bash");
         cmd.arg("-c").arg(command_str);
