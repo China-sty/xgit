@@ -1,0 +1,23 @@
+src/commands/git_ai_handlers.rs
+  48074a0db5d90cdf 1573,1577,1583-1595
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.20",
+  "base_commit_sha": "f56467343f28b53d5f6a55515200aa329abccae9",
+  "prompts": {
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "Gemini-3.1-Pro-Preview"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1753,
+      "overriden_lines": 0
+    }
+  }
+}
