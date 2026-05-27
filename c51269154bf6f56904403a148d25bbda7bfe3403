@@ -1,0 +1,23 @@
+src/git/repository.rs
+  48074a0db5d90cdf 264-272,3508,3531,3639
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.20",
+  "base_commit_sha": "c51269154bf6f56904403a148d25bbda7bfe3403",
+  "prompts": {
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "Gemini-3.1-Pro-Preview"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 1765,
+      "total_deletions": 10,
+      "accepted_lines": 1765,
+      "overriden_lines": 0
+    }
+  }
+}
