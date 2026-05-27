@@ -227,7 +227,6 @@ fn profile_options(profile: InternalGitProfile) -> &'static [&'static str] {
             "--no-textconv",
             "--src-prefix=a/",
             "--dst-prefix=b/",
-            "--no-relative",
             "--no-color",
             "--diff-algorithm=default",
             "--indent-heuristic",
@@ -237,14 +236,12 @@ fn profile_options(profile: InternalGitProfile) -> &'static [&'static str] {
             "--no-ext-diff",
             "--no-textconv",
             "--no-color",
-            "--no-relative",
             "--no-renames",
         ],
         InternalGitProfile::RawDiffParse => &[
             "--no-ext-diff",
             "--no-textconv",
             "--no-color",
-            "--no-relative",
         ],
     }
 }
@@ -264,8 +261,15 @@ fn args_with_internal_git_profile(args: &[String], profile: InternalGitProfile) 
         return args;
     }
 
-    let mut out = Vec::with_capacity(args.len() + options.len());
-    out.extend(args[..=command_index].iter().cloned());
+    let mut out = Vec::with_capacity(args.len() + options.len() + 2);
+    out.extend(args[..command_index].iter().cloned());
+    
+    // Inject global config to disable relative paths, which is supported by much older git versions than --no-relative
+    out.push("-c".to_string());
+    out.push("diff.relative=false".to_string());
+    
+    out.push(args[command_index].clone());
+    
     for option in options {
         if !args.iter().any(|arg| arg == option) {
             out.push((*option).to_string());
@@ -3501,7 +3505,7 @@ mod tests {
         assert!(rewritten.iter().any(|arg| arg == "--no-textconv"));
         assert!(rewritten.iter().any(|arg| arg == "--src-prefix=a/"));
         assert!(rewritten.iter().any(|arg| arg == "--dst-prefix=b/"));
-        assert!(rewritten.iter().any(|arg| arg == "--no-relative"));
+        assert!(rewritten.windows(2).any(|w| w == ["-c", "diff.relative=false"]));
         assert!(rewritten.iter().any(|arg| arg == "--no-color"));
         assert!(
             rewritten
@@ -3524,7 +3528,7 @@ mod tests {
         assert!(rewritten.iter().any(|arg| arg == "--no-ext-diff"));
         assert!(rewritten.iter().any(|arg| arg == "--no-textconv"));
         assert!(rewritten.iter().any(|arg| arg == "--no-color"));
-        assert!(rewritten.iter().any(|arg| arg == "--no-relative"));
+        assert!(rewritten.windows(2).any(|w| w == ["-c", "diff.relative=false"]));
         assert!(rewritten.iter().any(|arg| arg == "--no-renames"));
     }
 
@@ -3632,7 +3636,7 @@ mod tests {
         assert!(rewritten.iter().any(|arg| arg == "--no-ext-diff"));
         assert!(rewritten.iter().any(|arg| arg == "--no-textconv"));
         assert!(rewritten.iter().any(|arg| arg == "--no-color"));
-        assert!(rewritten.iter().any(|arg| arg == "--no-relative"));
+        assert!(rewritten.windows(2).any(|w| w == ["-c", "diff.relative=false"]));
     }
 
     #[test]
