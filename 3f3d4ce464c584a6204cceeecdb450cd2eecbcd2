@@ -1,0 +1,63 @@
+fix_script6.py
+  48074a0db5d90cdf 1-9
+large_low_ai_commits.csv
+  48074a0db5d90cdf 1-554
+fix_script3.py
+  48074a0db5d90cdf 1-14
+.traerules
+  48074a0db5d90cdf 1-8
+.trae/skill-config.json
+  48074a0db5d90cdf 1-6
+analyze_ai_tools.py
+  48074a0db5d90cdf 1-84
+install_inner.sh
+  48074a0db5d90cdf 1-460
+test_qoder.json
+  48074a0db5d90cdf 1-26
+fix_script.py
+  48074a0db5d90cdf 1-16
+fix_script5.py
+  48074a0db5d90cdf 1-10
+find_large_low_ai_commits.py
+  48074a0db5d90cdf 1-314
+test_qoder.rs
+  48074a0db5d90cdf 1-59
+.trae/skills/trae-git-ai-checkpoint/SKILL.md
+  48074a0db5d90cdf 1-47
+ai_penetration_stats.csv
+  48074a0db5d90cdf 1
+fix_script4.py
+  48074a0db5d90cdf 1-8
+fix_script2.py
+  48074a0db5d90cdf 1-10
+large_low_ai_commits_last1d.csv
+  48074a0db5d90cdf 1-27
+test_qoder.py
+  48074a0db5d90cdf 1-53
+fix_path.py
+  48074a0db5d90cdf 1-17
+ai_tools_usage.csv
+  48074a0db5d90cdf 1-13
+test_qoder_hook.json
+  48074a0db5d90cdf 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.20",
+  "base_commit_sha": "f4b02b63668cfef2f13baeabe86ada416413e7fb",
+  "prompts": {
+    "48074a0db5d90cdf": {
+      "agent_id": {
+        "tool": "trae-skill-agent",
+        "id": "trae-session",
+        "model": "Gemini-3.1-Pro-Preview"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1737,
+      "overriden_lines": 0
+    }
+  }
+}
