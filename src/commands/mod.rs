@@ -23,5 +23,6 @@ pub mod show;
 pub mod show_prompt;
 pub mod status;
 pub mod upgrade;
+pub mod update;
 pub mod usage;
 pub mod whoami;
