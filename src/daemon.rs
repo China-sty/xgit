@@ -5176,7 +5176,7 @@ fn windows_trace_pipe_worker_loop(
         }
 
         {
-            let mut reader = BufReader::new(&mut server);
+            let reader = BufReader::new(&mut server);
             if let Err(e) = handle_trace_connection_actor_reader(
                 reader,
                 coordinator.clone(),
@@ -5208,6 +5208,7 @@ fn handle_trace_connection_actor(
     handle_trace_connection_actor_reader(reader, coordinator, std::collections::BTreeSet::new())
 }
 
+#[cfg(not(windows))]
 enum TraceConnectionBootstrap {
     Continue,
     Stop,
@@ -5216,11 +5217,14 @@ enum TraceConnectionBootstrap {
 
 struct TraceLineOutcome {
     continue_reading: bool,
+    #[cfg(not(windows))]
     bootstrap_complete: bool,
 }
 
+#[cfg(not(windows))]
 const TRACE_CONNECTION_BOOTSTRAP_MAX_LINES: usize = 8;
 
+#[cfg(not(windows))]
 fn bootstrap_trace_connection_actor_reader<R: Read>(
     reader: &mut BufReader<R>,
     coordinator: Arc<ActorDaemonCoordinator>,
@@ -5279,6 +5283,7 @@ fn process_trace_connection_line(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+    #[cfg(not(windows))]
     let mut bootstrap_complete = false;
     if let Some(sid) = parsed.get("sid").and_then(Value::as_str) {
         let root_sid = trace_root_sid(sid).to_string();
@@ -5286,6 +5291,7 @@ fn process_trace_connection_line(
         // listener thread until the root `def_repo` event has been processed;
         // that is the first point where trace augmentation can capture reflog
         // start offsets with a concrete worktree.
+        #[cfg(not(windows))]
         if event == "def_repo" && sid == root_sid {
             bootstrap_complete = true;
         }
@@ -5302,6 +5308,7 @@ fn process_trace_connection_line(
         && coordinator.enqueue_trace_payload(parsed).is_err());
     Ok(Some(TraceLineOutcome {
         continue_reading,
+        #[cfg(not(windows))]
         bootstrap_complete,
     }))
 }
