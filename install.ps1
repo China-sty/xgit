@@ -346,13 +346,12 @@ if (-not [string]::IsNullOrWhiteSpace($env:GIT_AI_LOCAL_BINARY)) {
 # ============================================================
 $isElevated = $false
 try {
-    # Detect actual UAC elevation, not just Administrators group membership.
-    # Most Windows users are in the Administrators group but run non-elevated;
-    # we only warn when the process was explicitly "Run as Administrator".
+    # Detect actual UAC elevation via mandatory integrity level.
+    # Most Windows users are in the Administrators group but run non-elevated
+    # (Medium integrity S-1-16-8192). We only warn when the process is
+    # actually elevated (High integrity S-1-16-12288), i.e. "Run as Administrator".
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $adminSid = [Security.Principal.SecurityIdentifier]::new(
-        [Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
-    $isElevated = $identity.Owner -eq $adminSid
+    $isElevated = $identity.Groups.Value -contains 'S-1-16-12288'
 } catch { }
 
 if ($isElevated -and $env:GIT_AI_ALLOW_SUPERUSER -ne '1') {
