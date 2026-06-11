@@ -1,12 +1,12 @@
 use crate::auth::{AuthState, collect_auth_status, format_unix_timestamp};
 use crate::config;
+use crate::diagnostics::{DiagnosticCheckResult, GitDiagnosticTarget};
 use crate::git::find_repository_in_path;
 use std::env;
 use std::fmt::Write as _;
-use std::process::Command;
-
-#[cfg(target_os = "linux")]
 use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 pub fn handle_debug(args: &[String]) {
     if args
@@ -38,6 +38,9 @@ fn print_debug_help() {
 fn build_debug_report() -> String {
     let config = config::Config::get();
     let git_cmd = config.git_cmd().to_string();
+    let git_cmd_realpath = realpath_for_display(&git_cmd);
+    let shell_git_lookup = collect_shell_git_lookup();
+    let git_diagnostics = collect_git_diagnostics(&git_cmd);
     let git_version = run_command_capture(&git_cmd, &["--version"]);
     let git_config = collect_git_config_dump(&git_cmd);
     let git_ai_config = collect_git_ai_config_dump();
@@ -70,6 +73,22 @@ fn build_debug_report() -> String {
             .unwrap_or_else(|e| format!("<unavailable: {}>", e))
     );
     let _ = writeln!(out, "Git binary path: {}", git_cmd);
+    let _ = writeln!(out, "Git binary realpath: {}", git_cmd_realpath);
+    let _ = writeln!(
+        out,
+        "Shell git lookup command: {}",
+        shell_git_lookup.command
+    );
+    match shell_git_lookup.path {
+        Ok(ref path) => {
+            let _ = writeln!(out, "Shell git path: {}", path);
+            let _ = writeln!(out, "Shell git realpath: {}", realpath_for_display(path));
+        }
+        Err(ref err) => {
+            let _ = writeln!(out, "Shell git path: <error: {}>", err);
+            let _ = writeln!(out, "Shell git realpath: <unavailable>");
+        }
+    }
     match git_version {
         Ok(version) => {
             let _ = writeln!(out, "Git version: {}", version);
@@ -175,6 +194,9 @@ fn build_debug_report() -> String {
             }
         }
     }
+    let _ = writeln!(out);
+
+    append_git_diagnostics(&mut out, &git_diagnostics);
     let _ = writeln!(out);
 
     let _ = writeln!(out, "== Git Config ==");
@@ -286,6 +308,169 @@ fn build_debug_report() -> String {
     out
 }
 
+struct GitDebugDiagnostics {
+    target: GitDiagnosticTarget,
+    attribution: DiagnosticCheckResult,
+    trace2: DiagnosticCheckResult,
+}
+
+fn collect_git_diagnostics(configured_git: &str) -> Vec<GitDebugDiagnostics> {
+    let targets = vec![
+        GitDiagnosticTarget::new("configured git", configured_git),
+        GitDiagnosticTarget::new("terminal git", "git"),
+    ];
+
+    targets
+        .into_iter()
+        .map(|target| {
+            let attribution = crate::diagnostics::run_attribution_self_check(&target);
+            let trace2 = crate::diagnostics::run_trace2_file_self_check(&target);
+            GitDebugDiagnostics {
+                target,
+                attribution,
+                trace2,
+            }
+        })
+        .collect()
+}
+
+fn append_git_diagnostics(out: &mut String, diagnostics: &[GitDebugDiagnostics]) {
+    let _ = writeln!(out, "== Git Self Checks ==");
+    for diagnostic in diagnostics {
+        let _ = writeln!(
+            out,
+            "{} (program: {})",
+            diagnostic.target.label, diagnostic.target.program
+        );
+        append_diagnostic_check(
+            out,
+            "Attribution self-check",
+            &diagnostic.attribution,
+            false,
+        );
+        append_diagnostic_check(out, "Trace2 file self-check", &diagnostic.trace2, true);
+    }
+}
+
+fn append_diagnostic_check(
+    out: &mut String,
+    label: &str,
+    check: &DiagnosticCheckResult,
+    always_show_trace2: bool,
+) {
+    let _ = writeln!(
+        out,
+        "  {}: {} - {}",
+        label,
+        check.status.as_str(),
+        check.summary
+    );
+    for detail in &check.details {
+        let _ = writeln!(out, "    {}", detail);
+    }
+
+    if always_show_trace2 && let Some(trace2_json) = check.trace2_json.as_ref() {
+        let _ = writeln!(out, "    trace2 JSON received:");
+        append_indented_block_with_prefix(out, trace2_json, "      ");
+    }
+
+    if check.status == crate::diagnostics::DiagnosticStatus::Failed {
+        let _ = writeln!(out, "    command log:");
+        for command in &check.commands {
+            let _ = writeln!(out, "      $ {}", command.command);
+            if let Some(cwd) = &command.cwd {
+                let _ = writeln!(out, "        cwd: {}", cwd);
+            }
+            let _ = writeln!(
+                out,
+                "        status: {}",
+                command
+                    .status
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "<unavailable>".to_string())
+            );
+            if !command.stdout.trim().is_empty() {
+                let _ = writeln!(out, "        stdout:");
+                append_indented_block_with_prefix(out, &command.stdout, "          ");
+            }
+            if !command.stderr.trim().is_empty() {
+                let _ = writeln!(out, "        stderr:");
+                append_indented_block_with_prefix(out, &command.stderr, "          ");
+            }
+        }
+    }
+}
+
+struct ShellGitLookup {
+    command: String,
+    path: Result<String, String>,
+}
+
+fn collect_shell_git_lookup() -> ShellGitLookup {
+    #[cfg(windows)]
+    {
+        collect_windows_shell_git_lookup()
+    }
+
+    #[cfg(not(windows))]
+    {
+        collect_unix_shell_git_lookup()
+    }
+}
+
+#[cfg(not(windows))]
+fn collect_unix_shell_git_lookup() -> ShellGitLookup {
+    let shell = env::var("SHELL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "sh".to_string());
+    let command = format!("{} -lc 'which git'", shell);
+    let path = run_command_capture(&shell, &["-lc", "which git"])
+        .and_then(|output| select_lookup_path(&output));
+
+    ShellGitLookup { command, path }
+}
+
+#[cfg(windows)]
+fn collect_windows_shell_git_lookup() -> ShellGitLookup {
+    let comspec = env::var("ComSpec")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "cmd.exe".to_string());
+    let command = format!("{} /C where git", comspec);
+    let path = run_command_capture(&comspec, &["/C", "where git"])
+        .and_then(|output| select_lookup_path(&output));
+
+    ShellGitLookup { command, path }
+}
+
+fn select_lookup_path(output: &str) -> Result<String, String> {
+    let mut first_non_empty = None;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if first_non_empty.is_none() {
+            first_non_empty = Some(trimmed.to_string());
+        }
+
+        if Path::new(trimmed).exists() {
+            return Ok(trimmed.to_string());
+        }
+    }
+
+    first_non_empty.ok_or_else(|| "empty output".to_string())
+}
+
+fn realpath_for_display(path: &str) -> String {
+    fs::canonicalize(path)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|e| format!("<error: {}>", e))
+}
+
 fn append_indented_block(out: &mut String, content: &str) {
     if content.trim().is_empty() {
         let _ = writeln!(out, "  <empty>");
@@ -293,6 +478,16 @@ fn append_indented_block(out: &mut String, content: &str) {
     }
     for line in content.lines() {
         let _ = writeln!(out, "  {}", line);
+    }
+}
+
+fn append_indented_block_with_prefix(out: &mut String, content: &str, prefix: &str) {
+    if content.trim().is_empty() {
+        let _ = writeln!(out, "{}<empty>", prefix);
+        return;
+    }
+    for line in content.lines() {
+        let _ = writeln!(out, "{}{}", prefix, line);
     }
 }
 
@@ -739,5 +934,35 @@ mod tests {
     #[test]
     fn test_format_bytes() {
         assert_eq!(format_bytes(1024), "1.00 KB (1024 bytes)");
+    }
+
+    #[test]
+    fn test_select_lookup_path_prefers_existing_path() {
+        let exe = env::current_exe().unwrap();
+        let output = format!("/definitely/not/git\n{}\n", exe.display());
+
+        assert_eq!(
+            select_lookup_path(&output).unwrap(),
+            exe.display().to_string()
+        );
+    }
+
+    #[test]
+    fn test_select_lookup_path_falls_back_to_first_non_empty_line() {
+        assert_eq!(
+            select_lookup_path("\n git: aliased to hub \n").unwrap(),
+            "git: aliased to hub"
+        );
+    }
+
+    #[test]
+    fn test_realpath_for_display_canonicalizes_existing_path() {
+        let exe = env::current_exe().unwrap();
+        let expected = fs::canonicalize(&exe).unwrap();
+
+        assert_eq!(
+            realpath_for_display(&exe.display().to_string()),
+            expected.display().to_string()
+        );
     }
 }
