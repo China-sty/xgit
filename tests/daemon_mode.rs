@@ -1013,6 +1013,7 @@ fn checkpoint_fails_hard_when_daemon_startup_is_blocked() {
 
 #[test]
 #[cfg(windows)]
+#[serial]
 fn daemon_windows_stalled_checkpoint_clients_do_not_block_later_control_requests() {
     let repo =
         TestRepo::new_with_mode_and_daemon_scope(GitTestMode::Daemon, DaemonTestScope::NoDaemon);
