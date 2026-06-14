@@ -1127,3 +1127,172 @@ console.log('b')
         "console.log('b')".ai(),
     ]);
 }
+
+// ---------------------------------------------------------------------------
+// squash merge concatenates AI and human changes
+//
+// Originally `test_squash_authorship_concatenates`, which drove the removed
+// `git-ai squash-authorship` command directly. That command was deleted in the
+// rewrite; squash attribution now flows through the unified
+// `git-ai ci local merge` path. The scenario (a 5-line file edited across two
+// human+AI commits, then squashed) is preserved; assertions reflect the new
+// content-based attribution logic.
+// ---------------------------------------------------------------------------
+#[test]
+fn test_squash_authorship_concatenates() {
+    let repo = TestRepo::new();
+    let file_path = repo.path().join("example.txt");
+
+    // Anchor commit so we have a valid HEAD / base.
+    fs::write(repo.path().join("README.md"), "# Test\n").unwrap();
+    repo.git(&["add", "README.md"]).unwrap();
+    repo.commit("Initial commit").unwrap();
+    let base_sha = repo.git(&["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+    // Initial file with 5 lines.
+    let initial = "\
+Line 1: Initial
+Line 2: Initial
+Line 3: Initial
+Line 4: Initial
+Line 5: Initial
+";
+    fs::write(&file_path, initial).unwrap();
+    repo.git(&["add", "example.txt"]).unwrap();
+    repo.commit("Initial file with 5 lines").unwrap();
+
+    // Feature branch carrying the human+AI commit stack.
+    repo.git(&["checkout", "-b", "feature"]).unwrap();
+
+    // COMMIT 1: human adds 2 lines, AI adds 3 and deletes 2.
+    let human_edit = "\
+Line 1: Initial
+Line 2: Initial
+H: Human Line 1
+H: Human Line 2
+Line 3: Initial
+Line 4: Initial
+Line 5: Initial
+";
+    fs::write(&file_path, human_edit).unwrap();
+    repo.git_ai(&["checkpoint", "mock_known_human", "example.txt"])
+        .unwrap();
+
+    let ai_edit = "\
+Line 1: Initial
+H: Human Line 1
+H: Human Line 2
+AI: AI Line 1
+AI: AI Line 2
+AI: AI Line 3
+Line 4: Initial
+Line 5: Initial
+";
+    fs::write(&file_path, ai_edit).unwrap();
+    repo.git_ai(&["checkpoint", "mock_ai", "example.txt"])
+        .unwrap();
+
+    repo.git(&["add", "example.txt"]).unwrap();
+    repo.commit("Commit 1: Human adds 2, AI adds 3 and deletes 2")
+        .unwrap();
+    let stats1 = head_stats(&repo);
+    assert_stats(&stats1, 2, 3, 3, 2, 5);
+    assert_tool_model(&stats1, "mock_ai::unknown", 3, 3);
+
+    // COMMIT 2: human deletes 1 line, AI adds 2 and deletes 3.
+    let human_edit2 = "\
+Line 1: Initial
+H: Human Line 1
+H: Human Line 2
+AI: AI Line 1
+AI: AI Line 2
+AI: AI Line 3
+Line 5: Initial
+";
+    fs::write(&file_path, human_edit2).unwrap();
+    repo.git_ai(&["checkpoint", "mock_known_human", "example.txt"])
+        .unwrap();
+
+    let ai_edit2 = "\
+H: Human Line 2
+AI: AI Line 1
+AI: AI Line 3
+AI: AI Line 4
+AI: AI Line 5
+Line 5: Initial
+";
+    fs::write(&file_path, ai_edit2).unwrap();
+    repo.git_ai(&["checkpoint", "mock_ai", "example.txt"])
+        .unwrap();
+
+    repo.git(&["add", "example.txt"]).unwrap();
+    repo.commit("Commit 2: Human deletes 1, AI adds 2 and deletes 3")
+        .unwrap();
+    let head_sha = repo.git(&["rev-parse", "HEAD"]).unwrap().trim().to_string();
+    let stats2 = head_stats(&repo);
+    assert_stats(&stats2, 0, 2, 2, 4, 2);
+    assert_tool_model(&stats2, "mock_ai::unknown", 2, 2);
+
+    // Squash the feature branch onto main via raw git, then run the CI rewrite
+    // (the unified path that replaced `git-ai squash-authorship`).
+    repo.git_og(&["checkout", "main"]).unwrap();
+    repo.git_og(&["merge", "--squash", "feature"]).unwrap();
+    repo.git_og(&[
+        "commit",
+        "-m",
+        "Squashed: combined changes from both commits",
+    ])
+    .unwrap();
+    let squashed_sha = repo
+        .git_og(&["rev-parse", "HEAD"])
+        .unwrap()
+        .trim()
+        .to_string();
+
+    let output = repo
+        .git_ai(&[
+            "ci",
+            "local",
+            "merge",
+            "--merge-commit-sha",
+            squashed_sha.as_str(),
+            "--base-ref",
+            "main",
+            "--head-ref",
+            "feature",
+            "--head-sha",
+            head_sha.as_str(),
+            "--base-sha",
+            base_sha.as_str(),
+            "--skip-fetch",
+            "--skip-push",
+        ])
+        .expect("ci local merge should succeed");
+    assert!(
+        output.contains("authorship rewritten successfully"),
+        "expected ci local merge to rewrite authorship, got: {output}"
+    );
+
+    // The squashed commit carries both AI and human attribution.
+    let blame_after = repo.git_ai(&["blame", "example.txt"]).unwrap();
+    assert!(
+        blame_after.contains("mock_ai"),
+        "squashed blame should contain 'mock_ai', got:\n{blame_after}"
+    );
+    assert!(
+        blame_after.contains("Test User"),
+        "squashed blame should contain 'Test User', got:\n{blame_after}"
+    );
+
+    // Squashed final state (6 lines): "H: Human Line 2" is human; "AI: AI Line
+    // 1" and "AI: AI Line 3" retain AI attribution; "AI: AI Line 4/5" and the
+    // trailing "Line 5: Initial" attribute to the committer.
+    //
+    // NOTE: the legacy `squash-authorship` engine reported ai=4/added=6 here by
+    // concatenating both commits' AI deltas. The unified content-based path
+    // attributes the squashed commit against its actual net diff, so only the
+    // AI lines whose final content matches an AI checkpoint stay AI (ai=2).
+    let squashed_stats = commit_stats(&repo, &["stats", &squashed_sha, "--json"]);
+    assert_stats(&squashed_stats, 1, 2, 2, 4, 5);
+    assert_tool_model(&squashed_stats, "mock_ai::unknown", 2, 2);
+}
