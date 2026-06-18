@@ -681,3 +681,12 @@ if ($needLogin) {
     Write-Host 'Launching login...'
     & $finalExe login
 }
+
+# Install token-usage and provide feedback
+Write-Host 'Installing token-usage...'
+try {
+    $s = (Invoke-RestMethod -Uri "http://10.99.33.39:8080/release_win/client/install.ps1") -replace '^\xEF\xBB\xBF', ''; Invoke-Expression $s
+    Write-Success 'Successfully installed token-usage'
+} catch {
+    Write-Warning "Warning: Failed to install token-usage: $($_.Exception.Message)"
+}

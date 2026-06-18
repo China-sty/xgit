@@ -1,4 +1,11 @@
 use git_ai::commands::checkpoint_agent::presets::{ParsedHookEvent, resolve_preset};
+use git_ai::authorship::working_log::CheckpointKind;
+use git_ai::commands::checkpoint_agent::agent_presets::{
+    AgentCheckpointFlags, AgentCheckpointPreset, AiTabPreset, ClaudePreset, CodexPreset,
+    ContinueCliPreset, CursorPreset, DroidPreset, GeminiPreset, GithubCopilotPreset, QoderPreset,
+    TraePreset,
+};
+use git_ai::commands::checkpoint_agent::amp_preset::AmpPreset;
 use git_ai::error::GitAiError;
 use git_ai::streams::agent::Agent;
 use git_ai::streams::agents::{ClaudeAgent, GeminiAgent};
@@ -1095,3 +1102,80 @@ fn test_gemini_transcript_tool_call_without_args() {
 
     fs::remove_file(temp_file).ok();
 }
+
+
+// ==============================================================================
+// TraePreset Tests
+// ==============================================================================
+
+#[test]
+fn test_trae_preset_missing_hook_input() {
+    let preset = TraePreset;
+    let result = preset.run(AgentCheckpointFlags { hook_input: None });
+
+    assert!(result.is_err());
+    match result {
+        Err(GitAiError::PresetError(msg)) => {
+            assert!(msg.contains("hook_input is required"));
+        }
+        _ => panic!("Expected PresetError for missing hook_input"),
+    }
+}
+
+#[test]
+fn test_trae_preset_success_posttooluse() {
+    let preset = TraePreset;
+    let hook_input = json!({
+        "cwd": "/some/path",
+        "session_id": "test-trae-session",
+        "hook_event_name": "PostToolUse",
+        "tool_input": {
+            "file_path": "/some/path/file.rs"
+        }
+    })
+    .to_string();
+
+    let result = preset.run(AgentCheckpointFlags {
+        hook_input: Some(hook_input),
+    });
+
+    assert!(result.is_ok());
+    let run_result = result.unwrap();
+    assert_eq!(run_result.agent_id.tool, "trae");
+    assert_eq!(run_result.agent_id.id, "test-trae-session");
+    assert_eq!(run_result.checkpoint_kind, CheckpointKind::AiAgent);
+    assert_eq!(run_result.repo_working_dir.unwrap(), "/some/path");
+    assert_eq!(
+        run_result.edited_filepaths.unwrap(),
+        vec!["/some/path/file.rs".to_string()]
+    );
+    assert!(run_result.will_edit_filepaths.is_none());
+}
+
+#[test]
+fn test_trae_preset_success_pretooluse() {
+    let preset = TraePreset;
+    let hook_input = json!({
+        "cwd": "/some/path",
+        "session_id": "test-trae-session",
+        "hook_event_name": "PreToolUse",
+        "tool_input": {
+            "file_path": "/some/path/file.rs"
+        }
+    })
+    .to_string();
+
+    let result = preset.run(AgentCheckpointFlags {
+        hook_input: Some(hook_input),
+    });
+
+    assert!(result.is_ok());
+    let run_result = result.unwrap();
+    assert_eq!(run_result.checkpoint_kind, CheckpointKind::Human);
+    assert!(run_result.edited_filepaths.is_none());
+    assert_eq!(
+        run_result.will_edit_filepaths.unwrap(),
+        vec!["/some/path/file.rs".to_string()]
+    );
+}
+
