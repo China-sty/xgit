@@ -1,0 +1,23 @@
+install.ps1
+  49ea0f940787df81 794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.23",
+  "base_commit_sha": "63da8c332c18217ef27baf7d1ffc3619bb64013f",
+  "prompts": {
+    "49ea0f940787df81": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a33dbefdc8efc4a653ccd71",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
