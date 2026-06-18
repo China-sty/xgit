@@ -1,0 +1,16 @@
+src/commands/git_ai_handlers.rs
+  h_c2477703fb1e39 11,596-608
+src/mdm/agents/trae.rs
+  h_c2477703fb1e39 1-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.23",
+  "base_commit_sha": "3e3c2e7f11ff3757533819fba520088a302fb4d0",
+  "prompts": {},
+  "humans": {
+    "h_c2477703fb1e39": {
+      "author": "shaoty1 <shaoty1@xiaopeng.com>"
+    }
+  }
+}
