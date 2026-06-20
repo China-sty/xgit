@@ -5,7 +5,9 @@ use crate::daemon::{
 };
 use crate::utils::LockFile;
 #[cfg(windows)]
-use crate::utils::{CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
+use crate::utils::{
+    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS,
+};
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -13,8 +15,6 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-#[cfg(windows)]
-use std::{ffi::OsStr, path::Path};
 
 pub fn handle_daemon(args: &[String]) {
     if args.is_empty() || is_help(args[0].as_str()) {
@@ -341,11 +341,6 @@ fn daemon_runtime_dir(config: &DaemonConfig) -> Result<PathBuf, String> {
         .ok_or_else(|| "daemon lock path has no parent".to_string())
 }
 
-#[cfg(windows)]
-fn powershell_single_quote_literal(value: &OsStr) -> String {
-    format!("'{}'", value.to_string_lossy().replace('\'', "''"))
-}
-
 #[cfg(any(windows, not(any(test, feature = "test-support"))))]
 fn spawn_daemon_run_detached(config: &DaemonConfig) -> Result<(), String> {
     // Use current_git_ai_exe() instead of current_exe() to resolve through
@@ -357,19 +352,20 @@ fn spawn_daemon_run_detached(config: &DaemonConfig) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        let script = format!(
-            "Start-Process -FilePath {} -ArgumentList @('bg','run') -WorkingDirectory {} -WindowStyle Hidden",
-            powershell_single_quote_literal(exe.as_os_str()),
-            powershell_single_quote_literal(Path::new(&runtime_dir).as_os_str())
-        );
-        let mut child = Command::new("powershell.exe");
+        // Spawn the daemon directly via the Windows process API (CreateProcessW,
+        // which std::process::Command wraps) instead of shelling out to
+        // PowerShell's Start-Process. PowerShell is blocked in some locked-down
+        // corporate environments (issue #1366), and it was only ever used here
+        // as a detachment launcher. The creation flags below provide the same
+        // detachment: DETACHED_PROCESS gives the daemon no inherited console,
+        // CREATE_NO_WINDOW suppresses any console window, CREATE_NEW_PROCESS_GROUP
+        // isolates it from parent signals, and CREATE_BREAKAWAY_FROM_JOB lets it
+        // outlive the short-lived git command that triggered the spawn.
+        let mut child = Command::new(&exe);
         child
-            .arg("-NoProfile")
-            .arg("-NonInteractive")
-            .arg("-WindowStyle")
-            .arg("Hidden")
-            .arg("-Command")
-            .arg(script)
+            .arg("bg")
+            .arg("run")
+            .current_dir(&runtime_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -379,8 +375,10 @@ fn spawn_daemon_run_detached(config: &DaemonConfig) -> Result<(), String> {
         }
         child.env_remove("GIT_AI");
 
-        let preferred_flags =
-            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB;
+        let preferred_flags = CREATE_NO_WINDOW
+            | DETACHED_PROCESS
+            | CREATE_NEW_PROCESS_GROUP
+            | CREATE_BREAKAWAY_FROM_JOB;
         child.creation_flags(preferred_flags);
         match child.spawn() {
             Ok(_) => Ok(()),
@@ -389,7 +387,8 @@ fn spawn_daemon_run_detached(config: &DaemonConfig) -> Result<(), String> {
                     "detached daemon spawn with CREATE_BREAKAWAY_FROM_JOB failed, retrying without it: {}",
                     preferred_err
                 );
-                child.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+                child
+                    .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
                 child.spawn().map(|_| ()).map_err(|fallback_err| {
                     format!(
                         "failed to spawn detached daemon with flags {:#x}: {}; retry without CREATE_BREAKAWAY_FROM_JOB also failed: {}",
