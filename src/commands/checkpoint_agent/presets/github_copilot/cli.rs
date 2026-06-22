@@ -158,11 +158,20 @@ fn resolve_copilot_cli_session_path(session_id: &str) -> Option<PathBuf> {
 
 fn classify_cli_tool(tool: &str) -> ToolClass {
     match tool {
+        // Legacy lowercase tool names (older Copilot CLI builds).
         "bash" | "powershell" => ToolClass::Bash,
         "create" | "str_replace" | "edit" | "str_replace_editor" | "apply_patch"
         | "git_apply_patch" => ToolClass::FileEdit,
+        // Claude-format tool names. Copilot CLI >= 1.0.62 emits Claude-style PascalCase
+        // tool names in its hook payloads (e.g. `Bash` rather than `bash`, `Edit` rather
+        // than `str_replace`). We support both the old and new names side by side.
+        // For `Edit`/`Write`, `tool_input` is an apply-patch string (`*** Add File: ...` /
+        // `*** Update File: ...`); path extraction handles that via collect_apply_patch_paths.
+        "Bash" => ToolClass::Bash,
+        "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => ToolClass::FileEdit,
         // Skip read-only and control tools:
-        //   view, read_file, grep, glob, semantic_search — read-only.
+        //   view, read_file, grep, glob, semantic_search — read-only (legacy lowercase).
+        //   Read, Grep, Glob, LS, Task, TodoWrite, WebFetch, WebSearch — read-only/control (Claude-format).
         //   report_intent, task_complete, ask_user, update_todo — metadata/control.
         //   read_bash / write_bash / stop_bash / list_bash — control ops on async shell.
         //   read_powershell / write_powershell / stop_powershell / list_powershell — same for PS.
@@ -404,21 +413,31 @@ mod tests {
 
     #[test]
     fn classify_cli_tool_matrix() {
-        // Bash tools
+        // Bash tools (legacy lowercase + Claude-format)
         assert_eq!(classify_cli_tool("bash"), ToolClass::Bash);
         assert_eq!(classify_cli_tool("powershell"), ToolClass::Bash);
-        // File edit tools
+        assert_eq!(classify_cli_tool("Bash"), ToolClass::Bash);
+        // File edit tools (legacy lowercase)
         assert_eq!(classify_cli_tool("create"), ToolClass::FileEdit);
         assert_eq!(classify_cli_tool("str_replace"), ToolClass::FileEdit);
         assert_eq!(classify_cli_tool("edit"), ToolClass::FileEdit);
         assert_eq!(classify_cli_tool("str_replace_editor"), ToolClass::FileEdit);
         assert_eq!(classify_cli_tool("apply_patch"), ToolClass::FileEdit);
         assert_eq!(classify_cli_tool("git_apply_patch"), ToolClass::FileEdit);
-        // Skip: read-only tools
+        // File edit tools (Claude-format, Copilot CLI >= 1.0.62)
+        assert_eq!(classify_cli_tool("Edit"), ToolClass::FileEdit);
+        assert_eq!(classify_cli_tool("Write"), ToolClass::FileEdit);
+        assert_eq!(classify_cli_tool("MultiEdit"), ToolClass::FileEdit);
+        assert_eq!(classify_cli_tool("NotebookEdit"), ToolClass::FileEdit);
+        // Skip: read-only tools (legacy lowercase)
         assert_eq!(classify_cli_tool("view"), ToolClass::Skip);
         assert_eq!(classify_cli_tool("read_file"), ToolClass::Skip);
         assert_eq!(classify_cli_tool("grep"), ToolClass::Skip);
         assert_eq!(classify_cli_tool("glob"), ToolClass::Skip);
+        // Skip: read-only tools (Claude-format)
+        assert_eq!(classify_cli_tool("Read"), ToolClass::Skip);
+        assert_eq!(classify_cli_tool("Grep"), ToolClass::Skip);
+        assert_eq!(classify_cli_tool("Glob"), ToolClass::Skip);
         // Skip: control/metadata tools
         assert_eq!(classify_cli_tool("report_intent"), ToolClass::Skip);
         assert_eq!(classify_cli_tool("read_bash"), ToolClass::Skip);
@@ -426,5 +445,86 @@ mod tests {
         assert_eq!(classify_cli_tool("stop_bash"), ToolClass::Skip);
         assert_eq!(classify_cli_tool("list_bash"), ToolClass::Skip);
         assert_eq!(classify_cli_tool("nonsense"), ToolClass::Skip);
+    }
+
+    // Claude-format payloads captured from a live Copilot CLI 1.0.64 session. `Edit`
+    // creates/updates files via an apply-patch STRING tool_input; `Read` is read-only.
+    #[test]
+    fn cli_claude_format_edit_pre_post() {
+        let pre = json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": "a5f5793e",
+            "cwd": "/Users/a/project",
+            "tool_name": "Edit",
+            "tool_input": "*** Begin Patch\n*** Add File: hello.txt\n+hi\n+bye\n*** End Patch\n"
+        })
+        .to_string();
+        let pre_events = GithubCopilotPreset.parse(&pre, "t_test123456789a").unwrap();
+        match &pre_events[0] {
+            ParsedHookEvent::PreFileEdit(e) => {
+                assert_eq!(
+                    e.file_paths,
+                    vec![PathBuf::from("/Users/a/project/hello.txt")]
+                );
+            }
+            other => panic!("Expected PreFileEdit, got {:?}", other),
+        }
+
+        let post = json!({
+            "hook_event_name": "PostToolUse",
+            "session_id": "a5f5793e",
+            "cwd": "/Users/a/project",
+            "tool_name": "Edit",
+            "tool_input": "*** Begin Patch\n*** Add File: hello.txt\n+hi\n+bye\n*** End Patch\n",
+            "tool_result": {"result_type": "success", "text_result_for_llm": "Added 1 file(s): hello.txt"}
+        })
+        .to_string();
+        let post_events = GithubCopilotPreset
+            .parse(&post, "t_test123456789a")
+            .unwrap();
+        match &post_events[0] {
+            ParsedHookEvent::PostFileEdit(e) => {
+                assert_eq!(
+                    e.file_paths,
+                    vec![PathBuf::from("/Users/a/project/hello.txt")]
+                );
+            }
+            other => panic!("Expected PostFileEdit, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cli_claude_format_bash_pre() {
+        let input = json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": "sess-cli",
+            "cwd": "/Users/a/project",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"}
+        })
+        .to_string();
+        let events = GithubCopilotPreset
+            .parse(&input, "t_test123456789a")
+            .unwrap();
+        match &events[0] {
+            ParsedHookEvent::PreBashCall(e) => {
+                assert_eq!(e.tool_use_id, "cli-sess-cli-Bash");
+            }
+            other => panic!("Expected PreBashCall, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn cli_skips_claude_format_read() {
+        let input = json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": "sess-cli",
+            "cwd": "/Users/a/project",
+            "tool_name": "Read",
+            "tool_input": {"path": "/Users/a/project/hello.txt"}
+        })
+        .to_string();
+        let result = GithubCopilotPreset.parse(&input, "t_test123456789a");
+        assert!(result.is_err());
     }
 }
