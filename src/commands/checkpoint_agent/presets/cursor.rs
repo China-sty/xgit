@@ -195,7 +195,7 @@ fn normalize_cursor_path(path: &str) -> String {
 }
 
 /// Extract file paths from an ApplyPatch tool_input's patch text.
-/// Parses `*** Update File:`, `*** Add File:`, `*** Delete File:`, and `*** Move to:` prefixes.
+/// Delegates to the shared `parse::collect_apply_patch_paths_from_text` helper.
 fn extract_paths_from_patch(tool_input: Option<&serde_json::Value>) -> Vec<String> {
     let mut paths = Vec::new();
     let patch_text = tool_input.and_then(|ti| {
@@ -203,20 +203,7 @@ fn extract_paths_from_patch(tool_input: Option<&serde_json::Value>) -> Vec<Strin
             .or_else(|| ti.get("patch").and_then(|v| v.as_str()))
     });
     if let Some(text) = patch_text {
-        for line in text.lines() {
-            let trimmed = line.trim();
-            let maybe_path = trimmed
-                .strip_prefix("*** Update File: ")
-                .or_else(|| trimmed.strip_prefix("*** Add File: "))
-                .or_else(|| trimmed.strip_prefix("*** Delete File: "))
-                .or_else(|| trimmed.strip_prefix("*** Move to: "));
-            if let Some(path) = maybe_path {
-                let path = path.trim();
-                if !path.is_empty() && !paths.iter().any(|existing: &String| existing == path) {
-                    paths.push(path.to_string());
-                }
-            }
-        }
+        parse::collect_apply_patch_paths_from_text(text, &mut paths);
     }
     paths
 }
@@ -611,7 +598,7 @@ mod tests {
                     e.file_paths[1],
                     PathBuf::from("/home/user/project/src/new.rs")
                 );
-                assert!(e.transcript_source.is_some());
+                assert!(e.stream_source.is_some());
             }
             _ => panic!("Expected PostFileEdit"),
         }
