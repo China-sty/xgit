@@ -18,6 +18,9 @@ const CUBE_TIMEOUT_SECS: u64 = 120;
 pub struct CubeClient {
     base_url: String,
     api_key: String,
+    /// Built once and reused so successive cube calls share a connection pool
+    /// (and skip rebuilding the native-TLS connector per request).
+    agent: ureq::Agent,
 }
 
 #[derive(Debug)]
@@ -71,6 +74,7 @@ impl CubeClient {
         Ok(Self {
             base_url: cfg.api_base_url().trim_end_matches('/').to_string(),
             api_key,
+            agent: http::build_agent(Some(CUBE_TIMEOUT_SECS)),
         })
     }
 
@@ -80,8 +84,8 @@ impl CubeClient {
 
     /// POST a JSON body to a cube path and parse the response.
     fn post(&self, path: &str, body: &Value) -> Result<Value, CubeError> {
-        let agent = http::build_agent(Some(CUBE_TIMEOUT_SECS));
-        let request = agent
+        let request = self
+            .agent
             .post(&self.url(path))
             .set("x-api-key", &self.api_key)
             .set("Content-Type", "application/json");
@@ -92,8 +96,10 @@ impl CubeClient {
 
     /// GET a cube path and parse the response.
     fn get(&self, path: &str) -> Result<Value, CubeError> {
-        let agent = http::build_agent(Some(CUBE_TIMEOUT_SECS));
-        let request = agent.get(&self.url(path)).set("x-api-key", &self.api_key);
+        let request = self
+            .agent
+            .get(&self.url(path))
+            .set("x-api-key", &self.api_key);
         let response = http::send(request).map_err(CubeError::Transport)?;
         Self::parse(response)
     }

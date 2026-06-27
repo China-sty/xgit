@@ -11,6 +11,7 @@
 //! and returns it inline. `reset` rewinds the analysis cursor to re-run.
 
 use super::cube::{CubeClient, QueryArgs};
+use super::take_value;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
@@ -261,10 +262,7 @@ fn cmd_pull(args: &[String]) -> Result<(), String> {
             "--order" | "-o" => {
                 order.push(super::parse_order(&take_value(args, &mut i, "--order")?)?);
             }
-            "--help" | "-h" => {
-                print_help();
-                return Ok(());
-            }
+            // `--help`/`-h` is handled by `handle_sessions` before dispatch.
             other => return Err(format!("unknown pull flag: {}", other)),
         }
         i += 1;
@@ -413,10 +411,7 @@ fn cmd_next(args: &[String]) -> Result<(), String> {
                     .map_err(|_| "--max-events must be a number".to_string())?
             }
             "--no-transcript" => with_transcript = false,
-            "--help" | "-h" => {
-                print_help();
-                return Ok(());
-            }
+            // `--help`/`-h` is handled by `handle_sessions` before dispatch.
             other if !other.starts_with('-') && db_path.is_none() => {
                 db_path = Some(other.to_string())
             }
@@ -582,10 +577,7 @@ fn cmd_reset(args: &[String]) -> Result<(), String> {
                     .parse()
                     .map_err(|_| "--to must be a number".to_string())?
             }
-            "--help" | "-h" => {
-                print_help();
-                return Ok(());
-            }
+            // `--help`/`-h` is handled by `handle_sessions` before dispatch.
             other if !other.starts_with('-') && db_path.is_none() => {
                 db_path = Some(other.to_string())
             }
@@ -646,61 +638,66 @@ fn cmd_exec(args: &[String]) -> Result<(), String> {
 // Cube query field lists
 // ---------------------------------------------------------------------------
 
+/// Fully-qualify a list of cube members as `<cube>.<member>`.
+fn qualify(cube: &str, members: &[&str]) -> Vec<String> {
+    members.iter().map(|m| format!("{}.{}", cube, m)).collect()
+}
+
 fn session_dimensions() -> Vec<String> {
     // session_start_time is a plain dimension (not a bare timeDimension) so that
     // `order` by it is honored — Cube ignores ordering on a timeDimension that
     // has no granularity. The `--since` dateRange still filters via timeDimensions.
-    [
-        "session_id",
-        "user_id",
-        "agent",
-        "repo_url",
-        "parent_session_id",
-        "child_session_count",
-        "session_start_time",
-        "session_end_time",
-    ]
-    .iter()
-    .map(|d| format!("{}.{}", SESSIONS_CUBE, d))
-    .collect()
+    qualify(
+        SESSIONS_CUBE,
+        &[
+            "session_id",
+            "user_id",
+            "agent",
+            "repo_url",
+            "parent_session_id",
+            "child_session_count",
+            "session_start_time",
+            "session_end_time",
+        ],
+    )
 }
 
 fn session_measures() -> Vec<String> {
-    [
-        "total_generated_lines",
-        "total_deleted_lines",
-        "net_generated_lines",
-        "total_generated_sloc",
-        "total_committed_lines",
-        "total_pr_opened_lines",
-        "total_merged_lines",
-        "total_production_lines",
-        "total_checkpoints",
-        "total_events",
-        "total_usage_minutes",
-    ]
-    .iter()
-    .map(|m| format!("{}.{}", SESSIONS_CUBE, m))
-    .collect()
+    qualify(
+        SESSIONS_CUBE,
+        &[
+            "total_generated_lines",
+            "total_deleted_lines",
+            "net_generated_lines",
+            "total_generated_sloc",
+            "total_committed_lines",
+            "total_pr_opened_lines",
+            "total_merged_lines",
+            "total_production_lines",
+            "total_checkpoints",
+            "total_events",
+            "total_usage_minutes",
+        ],
+    )
 }
 
 fn event_dimensions() -> Vec<String> {
-    [
-        "event_kind",
-        "tool",
-        "tool_kind",
-        "model",
-        "target",
-        "text",
-        "summary",
-        "tool_input",
-        "tool_output",
-        "event_time",
-        "output_seq",
-    ]
-    .iter()
-    .map(|d| format!("{}.{}", EVENTS_CUBE, d))
-    .collect()
+    qualify(
+        EVENTS_CUBE,
+        &[
+            "event_kind",
+            "tool",
+            "tool_kind",
+            "model",
+            "target",
+            "text",
+            "summary",
+            "tool_input",
+            "tool_output",
+            "event_time",
+            "output_seq",
+        ],
+    )
 }
 
 /// Build Cube equals-filter objects from (member, optional value) pairs,
@@ -946,17 +943,17 @@ fn enrich_token_usage(
     conn: &Connection,
     session_ids: &[String],
 ) -> Result<(), String> {
-    let measures = [
-        "total_input_tokens",
-        "total_output_tokens",
-        "total_cache_read_tokens",
-        "total_cache_creation_tokens",
-        "total_reasoning_tokens",
-        "total_cost",
-    ]
-    .iter()
-    .map(|m| format!("{}.{}", TOKEN_USAGE_CUBE, m))
-    .collect();
+    let measures = qualify(
+        TOKEN_USAGE_CUBE,
+        &[
+            "total_input_tokens",
+            "total_output_tokens",
+            "total_cache_read_tokens",
+            "total_cache_creation_tokens",
+            "total_reasoning_tokens",
+            "total_cost",
+        ],
+    );
     let args = QueryArgs {
         measures,
         dimensions: vec![format!("{}.session_id", TOKEN_USAGE_CUBE)],
@@ -1048,10 +1045,10 @@ fn enrich_prs(
 ) -> Result<(), String> {
     let args = QueryArgs {
         measures: vec![format!("{}.total_ai_lines", PR_SESSIONS_CUBE)],
-        dimensions: ["session_id", "repo_url", "pr_number", "agent", "model_raw"]
-            .iter()
-            .map(|d| format!("{}.{}", PR_SESSIONS_CUBE, d))
-            .collect(),
+        dimensions: qualify(
+            PR_SESSIONS_CUBE,
+            &["session_id", "repo_url", "pr_number", "agent", "model_raw"],
+        ),
         filters_json: Some(id_filter(PR_SESSIONS_CUBE, session_ids)),
         // A session can land in several PRs; allow generous headroom per id.
         limit: Some((session_ids.len() as u64).saturating_mul(20).max(50)),
@@ -1166,6 +1163,19 @@ fn insert_events(
     Ok(inserted)
 }
 
+/// Build a JSON object from a SQLite row, keyed by the given (select-order)
+/// column names.
+fn row_to_json_object(
+    row: &rusqlite::Row,
+    cols: &[&str],
+) -> Result<Map<String, Value>, rusqlite::Error> {
+    let mut obj = Map::new();
+    for (idx, name) in cols.iter().enumerate() {
+        obj.insert((*name).to_string(), value_ref_to_json(row.get_ref(idx)?));
+    }
+    Ok(obj)
+}
+
 /// Read one session row as a JSON object keyed by the public column names.
 fn session_row_json(
     conn: &Connection,
@@ -1176,11 +1186,7 @@ fn session_row_json(
         SESSION_COLUMNS.join(", ")
     );
     conn.query_row(&sql, params![session_id], |row| {
-        let mut obj = Map::new();
-        for (idx, name) in SESSION_COLUMNS.iter().enumerate() {
-            obj.insert((*name).to_string(), value_ref_to_json(row.get_ref(idx)?));
-        }
-        Ok(obj)
+        row_to_json_object(row, SESSION_COLUMNS)
     })
 }
 
@@ -1206,11 +1212,7 @@ fn transcript_json(conn: &Connection, session_id: &str) -> Result<Vec<Value>, ru
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![session_id], |row| {
-        let mut obj = Map::new();
-        for (idx, name) in cols.iter().enumerate() {
-            obj.insert((*name).to_string(), value_ref_to_json(row.get_ref(idx)?));
-        }
-        Ok(Value::Object(obj))
+        Ok(Value::Object(row_to_json_object(row, &cols)?))
     })?;
     rows.collect()
 }
@@ -1224,11 +1226,7 @@ fn session_prs_json(conn: &Connection, session_id: &str) -> Result<Vec<Value>, r
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![session_id], |row| {
-        let mut obj = Map::new();
-        for (idx, name) in cols.iter().enumerate() {
-            obj.insert((*name).to_string(), value_ref_to_json(row.get_ref(idx)?));
-        }
-        Ok(Value::Object(obj))
+        Ok(Value::Object(row_to_json_object(row, &cols)?))
     })?;
     rows.collect()
 }
@@ -1237,10 +1235,14 @@ fn session_prs_json(conn: &Connection, session_id: &str) -> Result<Vec<Value>, r
 // Value extraction / conversion
 // ---------------------------------------------------------------------------
 
+/// Look up a cube member (`<cube>.<field>`) in a row.
+fn member<'a>(row: &'a Value, cube: &str, field: &str) -> Option<&'a Value> {
+    row.get(format!("{}.{}", cube, field))
+}
+
 /// Get a cube member (`<cube>.<field>`) from a row as an owned String.
 fn member_str(row: &Value, cube: &str, field: &str) -> Option<String> {
-    let key = format!("{}.{}", cube, field);
-    match row.get(&key) {
+    match member(row, cube, field) {
         Some(Value::String(s)) if !s.is_empty() => Some(s.clone()),
         Some(Value::Number(n)) => Some(n.to_string()),
         _ => None,
@@ -1249,8 +1251,7 @@ fn member_str(row: &Value, cube: &str, field: &str) -> Option<String> {
 
 /// Get a numeric cube member. Cube returns numbers as strings, so parse both.
 fn member_int(row: &Value, cube: &str, field: &str) -> Option<i64> {
-    let key = format!("{}.{}", cube, field);
-    match row.get(&key) {
+    match member(row, cube, field) {
         Some(Value::String(s)) => s.trim().parse::<f64>().ok().map(|f| f as i64),
         Some(Value::Number(n)) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)),
         _ => None,
@@ -1260,8 +1261,7 @@ fn member_int(row: &Value, cube: &str, field: &str) -> Option<i64> {
 /// Get a numeric cube member as f64 (e.g. cost). Cube returns numbers as
 /// strings, so parse both.
 fn member_float(row: &Value, cube: &str, field: &str) -> Option<f64> {
-    let key = format!("{}.{}", cube, field);
-    match row.get(&key) {
+    match member(row, cube, field) {
         Some(Value::String(s)) => s.trim().parse::<f64>().ok(),
         Some(Value::Number(n)) => n.as_f64(),
         _ => None,
@@ -1270,9 +1270,7 @@ fn member_float(row: &Value, cube: &str, field: &str) -> Option<f64> {
 
 /// Get a time-typed cube member (ISO8601 string) as unix seconds.
 fn member_time(row: &Value, cube: &str, field: &str) -> Option<i64> {
-    let key = format!("{}.{}", cube, field);
-    let s = row.get(&key)?.as_str()?;
-    parse_cube_time(s)
+    parse_cube_time(member(row, cube, field)?.as_str()?)
 }
 
 /// Parse a Cube time value (RFC3339 or `YYYY-MM-DDTHH:MM:SS[.fff]`) to unix secs.
@@ -1321,13 +1319,6 @@ fn value_ref_to_string(v: rusqlite::types::ValueRef) -> String {
 // ---------------------------------------------------------------------------
 // Misc
 // ---------------------------------------------------------------------------
-
-fn take_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
-    *i += 1;
-    args.get(*i)
-        .cloned()
-        .ok_or_else(|| format!("{} requires a value", flag))
-}
 
 fn single_db_arg(args: &[String], cmd: &str) -> Result<String, String> {
     args.iter()

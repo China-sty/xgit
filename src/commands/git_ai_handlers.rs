@@ -343,9 +343,7 @@ fn print_help() {
     eprintln!("  usage              Show local AI usage statistics");
     eprintln!("    --period <1d|3d|7d|30d>  Time window (default: 30d)");
     eprintln!("    --json                 Output in JSON format");
-    eprintln!("  analyze            Query backend analytics (Cube) and grade sessions");
-    eprintln!("    query|dry-run|meta     Run/validate a Cube query or list members");
-    eprintln!("    sessions <sub>         Pull + grade coding sessions at scale");
+    eprintln!("  analyze [beta]      Analyze agent sessions and effectiveness");
     eprintln!("  status             Show uncommitted AI authorship status (debug)");
     eprintln!("    --json                 Output in JSON format");
     eprintln!(

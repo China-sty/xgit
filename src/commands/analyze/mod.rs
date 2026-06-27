@@ -110,10 +110,7 @@ fn cmd_query(args: &[String]) -> Result<(), String> {
                     other => return Err(format!("unknown --format: {} (json|tsv|raw)", other)),
                 };
             }
-            "--help" | "-h" => {
-                print_help();
-                return Ok(());
-            }
+            // `--help`/`-h` is handled by `handle_analyze` before dispatch.
             other => return Err(format!("unknown query flag: {}", other)),
         }
         i += 1;
@@ -136,11 +133,8 @@ fn cmd_query(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_docs(args: &[String]) -> Result<(), String> {
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        print_help();
-        return Ok(());
-    }
+fn cmd_docs(_args: &[String]) -> Result<(), String> {
+    // `--help`/`-h` is handled by `handle_analyze` before dispatch.
     let client = CubeClient::from_config().map_err(|e| e.to_string())?;
     let meta = client.meta().map_err(|e| e.to_string())?;
     println!(
@@ -202,7 +196,7 @@ fn parse_order(s: &str) -> Result<(String, String), String> {
     Ok((member.to_string(), dir))
 }
 
-fn take_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
+pub(super) fn take_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
     *i += 1;
     args.get(*i)
         .cloned()
