@@ -122,6 +122,12 @@ pub(crate) struct PostCommitOptions {
     pub recover_attribution: bool,
 }
 
+pub(crate) struct PostCommitDetailedResult {
+    pub commit_sha: String,
+    pub authorship_log: AuthorshipLog,
+    pub authorship_note: String,
+}
+
 #[derive(Clone, Copy, Default)]
 struct PostCommitContext<'a> {
     precomputed_parent_diff: Option<&'a DiffTreeResult>,
@@ -176,6 +182,32 @@ where
     )
 }
 
+pub(crate) fn post_commit_from_working_log_with_transform_and_options_detailed<F>(
+    repo: &Repository,
+    base_commit: Option<String>,
+    commit_sha: String,
+    human_author: String,
+    options: PostCommitOptions,
+    transform: F,
+) -> Result<PostCommitDetailedResult, GitAiError>
+where
+    F: FnOnce(AuthorshipLog) -> Result<AuthorshipLog, GitAiError>,
+{
+    post_commit_from_working_log_with_transform_context_detailed(
+        repo,
+        base_commit,
+        commit_sha,
+        human_author,
+        options,
+        PostCommitContext {
+            precomputed_parent_diff: None,
+            recovery_file_timestamps: None,
+            before_external_recovery: None,
+        },
+        transform,
+    )
+}
+
 /// As [`post_commit_from_working_log_with_transform_and_options`], but accepts a
 /// pre-computed parent→commit `DiffTreeResult`. A batched caller (the rebase
 /// conflict-resolution driver) computes every qualifying commit's parent→commit
@@ -218,6 +250,30 @@ fn post_commit_from_working_log_with_transform_context<F>(
     context: PostCommitContext<'_>,
     transform: F,
 ) -> Result<(String, AuthorshipLog), GitAiError>
+where
+    F: FnOnce(AuthorshipLog) -> Result<AuthorshipLog, GitAiError>,
+{
+    post_commit_from_working_log_with_transform_context_detailed(
+        repo,
+        base_commit,
+        commit_sha,
+        human_author,
+        options,
+        context,
+        transform,
+    )
+    .map(|result| (result.commit_sha, result.authorship_log))
+}
+
+fn post_commit_from_working_log_with_transform_context_detailed<F>(
+    repo: &Repository,
+    base_commit: Option<String>,
+    commit_sha: String,
+    human_author: String,
+    options: PostCommitOptions,
+    context: PostCommitContext<'_>,
+    transform: F,
+) -> Result<PostCommitDetailedResult, GitAiError>
 where
     F: FnOnce(AuthorshipLog) -> Result<AuthorshipLog, GitAiError>,
 {
@@ -496,7 +552,11 @@ where
             }
         }
     }
-    Ok((commit_sha.to_string(), authorship_log))
+    Ok(PostCommitDetailedResult {
+        commit_sha: commit_sha.to_string(),
+        authorship_log,
+        authorship_note: authorship_note_str,
+    })
 }
 
 fn commit_tree_snapshot_for_files(
@@ -571,6 +631,13 @@ pub fn post_commit_amend(
     )
 }
 
+pub(crate) struct PostCommitAmendResult {
+    pub commit_sha: String,
+    pub authorship_log: AuthorshipLog,
+    pub authorship_note: String,
+    pub parent_sha: String,
+}
+
 pub(crate) fn post_commit_amend_with_recovery_timestamps(
     repo: &Repository,
     original_commit: &str,
@@ -579,6 +646,25 @@ pub(crate) fn post_commit_amend_with_recovery_timestamps(
     recovery_file_timestamps: Option<&FileTimestampsByPath>,
     before_external_recovery: Option<&dyn Fn(&UnknownLinesByFile)>,
 ) -> Result<(String, AuthorshipLog), GitAiError> {
+    post_commit_amend_with_recovery_timestamps_detailed(
+        repo,
+        original_commit,
+        amended_commit,
+        human_author,
+        recovery_file_timestamps,
+        before_external_recovery,
+    )
+    .map(|result| (result.commit_sha, result.authorship_log))
+}
+
+pub(crate) fn post_commit_amend_with_recovery_timestamps_detailed(
+    repo: &Repository,
+    original_commit: &str,
+    amended_commit: &str,
+    human_author: String,
+    recovery_file_timestamps: Option<&FileTimestampsByPath>,
+    before_external_recovery: Option<&dyn Fn(&UnknownLinesByFile)>,
+) -> Result<PostCommitAmendResult, GitAiError> {
     let repo_storage = &repo.storage;
     let working_log = repo_storage.working_log_for_base_commit(original_commit)?;
 
@@ -757,7 +843,12 @@ pub(crate) fn post_commit_amend_with_recovery_timestamps(
     // Clean up old working log
     repo_storage.delete_working_log_for_base_commit(original_commit)?;
 
-    Ok((amended_commit.to_string(), authorship_log))
+    Ok(PostCommitAmendResult {
+        commit_sha: amended_commit.to_string(),
+        authorship_log,
+        authorship_note: authorship_note_str,
+        parent_sha,
+    })
 }
 
 #[derive(Debug, Clone)]

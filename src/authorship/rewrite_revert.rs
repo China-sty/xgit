@@ -35,6 +35,7 @@ pub(crate) fn handle_revert_commits_with_metrics(
     if specs.is_empty() {
         return Ok(Vec::new());
     }
+    let collect_metrics = crate::authorship::rewrite::rewrite_metrics_enabled();
 
     // Resolve every spec's parent_sha (only those missing need a lookup) and the
     // source_base_sha (= first parent of the reverted commit, or of the parent
@@ -215,12 +216,19 @@ pub(crate) fn handle_revert_commits_with_metrics(
         let Ok(note_str) = log.serialize_to_string() else {
             continue;
         };
-        writes.push((r.revert_commit.clone(), note_str));
-        metric_commits.push(RewriteMetricCommit::new(
-            r.revert_commit.clone(),
-            r.original_shas.clone(),
-            RewriteMetricOperation::Revert,
-        ));
+        writes.push((r.revert_commit.clone(), note_str.clone()));
+        if collect_metrics {
+            metric_commits.push(
+                RewriteMetricCommit::new(
+                    r.revert_commit.clone(),
+                    r.original_shas.clone(),
+                    RewriteMetricOperation::Revert,
+                )
+                .with_parent_sha(r.parent_sha.clone())
+                .with_authorship_note(note_str)
+                .with_parent_diff(diff_results[added_idx[i]].clone()),
+            );
+        }
     }
 
     if !writes.is_empty() {
