@@ -372,11 +372,25 @@ fn rewrite_metric_attrs(
         attrs = attrs.repo_url(repo_url);
     }
 
-    if let Some(custom_attributes_json) = batch_context.custom_attributes_json.as_deref() {
-        attrs = attrs.custom_attributes(custom_attributes_json);
-    }
+    attrs = apply_rewrite_metric_custom_attributes(
+        attrs,
+        batch_context.custom_attributes_json.as_deref(),
+    );
 
     attrs
+}
+
+fn apply_rewrite_metric_custom_attributes(
+    attrs: EventAttributes,
+    custom_attributes_json: Option<&str>,
+) -> EventAttributes {
+    if let Some(custom_attributes_json) = custom_attributes_json {
+        // `custom_attributes_map` serializes the map and stores this same string field.
+        // Rewrite metrics pre-serialize once per batch to avoid repeated serde work.
+        attrs.custom_attributes(custom_attributes_json)
+    } else {
+        attrs
+    }
 }
 
 fn apply_rewrite_metric_branch(
@@ -502,6 +516,29 @@ mod tests {
         assert_eq!(
             sparse.get(&crate::metrics::attrs::attr_pos::BRANCH.to_string()),
             Some(&serde_json::json!("feature"))
+        );
+    }
+
+    #[test]
+    fn rewrite_metric_custom_attributes_match_map_builder_wire_format() {
+        let mut custom_attributes = HashMap::new();
+        custom_attributes.insert("team".to_string(), "metrics".to_string());
+        let custom_attributes_json =
+            serde_json::to_string(&custom_attributes).expect("serialize custom attributes");
+
+        let sparse_from_batch_json = apply_rewrite_metric_custom_attributes(
+            crate::metrics::EventAttributes::with_version("test"),
+            Some(&custom_attributes_json),
+        )
+        .to_sparse();
+        let sparse_from_map = crate::metrics::EventAttributes::with_version("test")
+            .custom_attributes_map(&custom_attributes)
+            .to_sparse();
+
+        assert_eq!(
+            sparse_from_batch_json
+                .get(&crate::metrics::attrs::attr_pos::CUSTOM_ATTRIBUTES.to_string()),
+            sparse_from_map.get(&crate::metrics::attrs::attr_pos::CUSTOM_ATTRIBUTES.to_string())
         );
     }
 
