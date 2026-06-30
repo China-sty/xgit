@@ -120,11 +120,11 @@ impl HookInstaller for QoderInstaller {
 
         let desired_hooks = json!({
             "PreToolUse": {
-                "matcher": "Write|Edit|MultiEdit",
+                "matcher": "SearchReplace|Write",
                 "desired_cmd": pre_tool_cmd,
             },
             "PostToolUse": {
-                "matcher": "Write|Edit|MultiEdit",
+                "matcher": "SearchReplace|Write",
                 "desired_cmd": post_tool_cmd,
             }
         });
@@ -145,11 +145,11 @@ impl HookInstaller for QoderInstaller {
                 .cloned()
                 .unwrap_or_default();
 
-            // Find existing matcher block for Write|Edit|MultiEdit
+            // Find existing matcher block for SearchReplace|Write or legacy Write|Edit|MultiEdit
             let mut found_matcher_idx: Option<usize> = None;
             for (idx, item) in hook_type_array.iter().enumerate() {
                 if let Some(matcher) = item.get("matcher").and_then(|m| m.as_str())
-                    && matcher == desired_matcher
+                    && (matcher == desired_matcher || matcher == "Write|Edit|MultiEdit")
                 {
                     found_matcher_idx = Some(idx);
                     break;
@@ -157,7 +157,13 @@ impl HookInstaller for QoderInstaller {
             }
 
             let matcher_idx = match found_matcher_idx {
-                Some(idx) => idx,
+                Some(idx) => {
+                    // Migrate legacy matcher to the new one
+                    if let Some(obj) = hook_type_array[idx].as_object_mut() {
+                        obj.insert("matcher".to_string(), Value::String(desired_matcher.to_string()));
+                    }
+                    idx
+                }
                 None => {
                     // Create new matcher block
                     hook_type_array.push(json!({
