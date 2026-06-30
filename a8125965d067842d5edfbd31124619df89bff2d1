@@ -1,0 +1,23 @@
+src/mdm/agents/qoder.rs
+  c8ed7440bf067969 123,127,148,152,160-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.23",
+  "base_commit_sha": "a9cd16fb7f7b8db772ee0f0e3c5c12d399b4c3ac",
+  "prompts": {
+    "c8ed7440bf067969": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a433544c3eeb373669c41f0",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 5,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    }
+  }
+}
