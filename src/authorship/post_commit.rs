@@ -352,7 +352,7 @@ where
             // the finalized commit's immediate parent to avoid buffering the whole
             // pulled range (PD-23 / #1677). No-hooks agents (Devin/Codex Cloud)
             // can be active during a pull, so this path is exposed too.
-            let diff_base = single_commit_diff_base(repo, &parent_sha, &commit_sha);
+            let diff_base = single_commit_diff_base(&parent_sha, &commit_sha);
             repo.diff_added_lines(&diff_base, &commit_sha, None)
                 .ok()
                 .map(|added_lines| {
@@ -432,7 +432,7 @@ where
     let mut skip_reason = None;
 
     if options.compute_stats {
-        let stats_diff_base = single_commit_diff_base(repo, &parent_sha, &commit_sha);
+        let stats_diff_base = single_commit_diff_base(&parent_sha, &commit_sha);
         let is_merge_commit = repo
             .find_commit(commit_sha.clone())
             .map(|commit| commit.parent_count().unwrap_or(0) > 1)
@@ -480,7 +480,9 @@ where
             record_commit_metrics(
                 repo,
                 &commit_sha,
-                &stats_diff_base,
+                // Store the recorded parent as `base_commit_sha`, not the
+                // `<commit>^` diff rev-expression used for the diff spawns.
+                &parent_sha,
                 &human_author,
                 &authorship_note_str,
                 &computed,
@@ -585,33 +587,29 @@ fn commit_tree_snapshot_for_files(
 }
 
 /// Resolve the diff base for post-commit diff parsing so the diff is always
-/// bounded to the single commit being finalized.
+/// bounded to the single commit being finalized — without any extra git spawn
+/// or object lookup.
 ///
-/// Returns the immediate first parent of `commit_sha` when it can be resolved
-/// and differs from the supplied `parent_sha` (i.e. `parent_sha` is a far-behind
-/// ancestor, as on the daemon fast-forward `update-ref` path). Otherwise returns
-/// `None`, signalling the caller to keep using `parent_sha` unchanged — which is
-/// already the immediate parent in the normal and amend cases.
-fn immediate_parent_diff_base(
-    repo: &Repository,
-    parent_sha: &str,
-    commit_sha: &str,
-) -> Option<String> {
-    let commit = repo.find_commit(commit_sha.to_string()).ok()?;
-    if commit.parent_count().ok()? == 0 {
-        return None;
-    }
-    let first_parent = commit.parent(0).ok()?.id();
-    (first_parent != parent_sha).then_some(first_parent)
-}
-
-fn single_commit_diff_base(repo: &Repository, parent_sha: &str, commit_sha: &str) -> String {
-    let diff_base = immediate_parent_diff_base(repo, parent_sha, commit_sha)
-        .unwrap_or_else(|| parent_sha.to_string());
-    if diff_base == "initial" {
+/// The caller's `parent_sha` is normally the immediate parent already, but on
+/// the daemon's fast-forward `update-ref` path it is the *old branch tip* from
+/// before a `git pull` — potentially thousands of commits back. Diffing that
+/// full range buffers the entire history delta into memory (the 20GB+ blow-up
+/// in PD-23 / #1677).
+///
+/// Rather than resolving the parent OID (which costs `find_commit` +
+/// `parent(0)` git spawns on *every* post-commit), we express "the immediate
+/// first parent" as the rev-expression `<commit_sha>^`. Git resolves it inside
+/// the `git diff` spawn that already runs, so this adds zero spawns. For root
+/// commits there is no `^`, signalled by `parent_sha == "initial"`, in which
+/// case we diff against the empty tree exactly as before.
+fn single_commit_diff_base(parent_sha: &str, commit_sha: &str) -> String {
+    if parent_sha == "initial" {
         EMPTY_TREE_SHA.to_string()
     } else {
-        diff_base
+        // `^` is `^1`, the first parent — matches the previous `parent(0)`
+        // resolution for merges (first-parent diff) and is identical to
+        // `parent_sha` on the normal/amend paths.
+        format!("{commit_sha}^")
     }
 }
 
@@ -628,15 +626,8 @@ fn recovery_committed_hunks(
     }
 
     // Recovery only attributes lines added by the commit being finalized, so the
-    // diff must be bounded to that single commit's immediate parent. The caller's
-    // `parent_sha` is normally the immediate parent already, but on the daemon's
-    // fast-forward `update-ref` path it is the *old branch tip* from before a
-    // `git pull` — potentially thousands of commits back. Diffing that full range
-    // buffers the entire history delta of `git diff` into memory (the 20GB+ blow
-    // up in PD-23 / #1677). Resolving the immediate parent caps the diff to one
-    // commit while leaving the normal/uncheckpointed-recovery cases unchanged
-    // (there `parent_sha` already equals the immediate parent).
-    let diff_base = single_commit_diff_base(repo, parent_sha, commit_sha);
+    // diff must be bounded to that single commit (see `single_commit_diff_base`).
+    let diff_base = single_commit_diff_base(parent_sha, commit_sha);
     let added_lines = repo.diff_added_lines(&diff_base, commit_sha, None)?;
     Ok(added_lines
         .into_iter()
