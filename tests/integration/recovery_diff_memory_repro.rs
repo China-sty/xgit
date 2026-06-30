@@ -21,20 +21,21 @@ use git_ai::git::repository::find_repository_in_path;
 use std::fs;
 use std::process::Command;
 
-/// Peak resident set size of this process so far, in KiB (Linux `VmHWM`).
-fn peak_rss_kb() -> u64 {
+/// Read a `/proc/self/status` size field (e.g. `VmHWM`, `VmRSS`) in KiB.
+fn proc_status_kb(field: &str) -> u64 {
     let status = fs::read_to_string("/proc/self/status").expect("read /proc/self/status");
+    let prefix = format!("{field}:");
     for line in status.lines() {
-        if let Some(rest) = line.strip_prefix("VmHWM:") {
+        if let Some(rest) = line.strip_prefix(&prefix) {
             return rest
                 .trim()
                 .trim_end_matches(" kB")
                 .trim()
                 .parse()
-                .expect("parse VmHWM");
+                .unwrap_or_else(|_| panic!("parse {field}"));
         }
     }
-    panic!("VmHWM not found in /proc/self/status");
+    panic!("{field} not found in /proc/self/status");
 }
 
 fn git(cwd: &std::path::Path, args: &[&str]) {
@@ -99,6 +100,10 @@ fn build_large_ff_range(
     (old_tip, new_tip)
 }
 
+// `VmHWM` is a process-wide, monotonic high-water mark and the integration
+// harness runs tests in parallel threads within one process. Run serially so a
+// concurrent test's allocations can't corrupt the baseline/after readings.
+#[serial_test::serial]
 #[test]
 fn recovery_full_range_diff_blows_up_memory_vs_immediate_parent() {
     let tmp = tempfile::tempdir().unwrap();
@@ -120,31 +125,35 @@ fn recovery_full_range_diff_blows_up_memory_vs_immediate_parent() {
         .unwrap()
         .id();
 
-    let baseline = peak_rss_kb();
-
     // BOUNDED path (the fix): diff only the finalized commit's own changes.
     let bounded_hunks = repo
         .diff_added_lines(&immediate_parent, &new_tip, None)
         .unwrap();
-    let after_bounded = peak_rss_kb();
 
-    // UNBOUNDED path (the bug): diff the entire old..new pulled range.
+    // Establish the peak high-water mark *after* the bounded diff. The bounded
+    // diff touches one small commit, so this captures the process's steady-state
+    // peak (plus any earlier test's peak, since VmHWM is monotonic) without the
+    // pulled range. The unbounded diff below must then push VmHWM substantially
+    // higher purely from buffering old..new.
+    let peak_before_full = proc_status_kb("VmHWM");
+
+    // UNBOUNDED path (the bug): diff the entire old..new pulled range. The whole
+    // `git diff -U0` output (~270MB here) is buffered into a String before being
+    // parsed, so VmHWM jumps by ~that amount.
     let full_hunks = repo.diff_added_lines(&old_tip, &new_tip, None).unwrap();
-    let after_full = peak_rss_kb();
-
-    let bounded_growth = after_bounded.saturating_sub(baseline);
-    let full_growth = after_full.saturating_sub(after_bounded);
+    let peak_after_full = proc_status_kb("VmHWM");
+    let full_peak_growth = peak_after_full.saturating_sub(peak_before_full);
 
     eprintln!(
-        "baseline={baseline}KB after_bounded={after_bounded}KB after_full={after_full}KB \
-         bounded_growth={bounded_growth}KB full_growth={full_growth}KB \
-         bounded_files={} full_files={}",
+        "peak_before_full={peak_before_full}KB peak_after_full={peak_after_full}KB \
+         full_peak_growth={full_peak_growth}KB bounded_files={} full_files={}",
         bounded_hunks.len(),
         full_hunks.len()
     );
 
-    // The bug: the full-range diff sees every pulled file; the bounded diff sees
-    // only the final commit's single file.
+    // Structural proof (deterministic, allocation-independent): the full-range
+    // diff materializes every pulled file; the bounded diff sees only the final
+    // commit's single file. This is what makes the unbounded path scale to 20GB.
     assert_eq!(
         bounded_hunks.len(),
         1,
@@ -156,12 +165,14 @@ fn recovery_full_range_diff_blows_up_memory_vs_immediate_parent() {
         full_hunks.len()
     );
 
-    // The full-range diff's peak-RSS growth dwarfs the bounded path's: this is
-    // the unbounded allocation that reached 20GB on real pulls. The bounded path
-    // (what `recovery_committed_hunks` now uses) stays flat.
+    // Memory proof: diffing the full pulled range pushes peak RSS up by >100MB
+    // (it buffers the entire ~270MB diff), whereas the bounded diff established
+    // the prior peak without it. Measuring VmHWM growth *after* the bounded diff
+    // makes this robust to any peak inherited from earlier serial tests — only
+    // the unbounded old..new diff can move the high-water mark this far.
     assert!(
-        full_growth > bounded_growth.saturating_mul(20).max(50_000),
-        "expected full-range diff to allocate far more than the bounded diff: \
-         bounded_growth={bounded_growth}KB full_growth={full_growth}KB"
+        full_peak_growth > 100_000,
+        "expected full-range diff to push peak RSS up by >100MB from buffering \
+         the whole pulled range; full_peak_growth={full_peak_growth}KB"
     );
 }

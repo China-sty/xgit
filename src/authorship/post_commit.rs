@@ -345,10 +345,17 @@ where
                 ),
             )
         } else {
-            let diff_base = if parent_sha == "initial" {
+            // Same bounding as recovery: on the daemon fast-forward `update-ref`
+            // path `parent_sha` is the far-behind old branch tip, so diff against
+            // the finalized commit's immediate parent to avoid buffering the whole
+            // pulled range (PD-23 / #1677). No-hooks agents (Devin/Codex Cloud)
+            // can be active during a pull, so this path is exposed too.
+            let immediate_parent = immediate_parent_diff_base(repo, &parent_sha, &commit_sha);
+            let diff_base = immediate_parent.as_deref().unwrap_or(&parent_sha);
+            let diff_base = if diff_base == "initial" {
                 "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
             } else {
-                &parent_sha
+                diff_base
             };
             repo.diff_added_lines(diff_base, &commit_sha, None)
                 .ok()
