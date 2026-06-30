@@ -4,7 +4,7 @@ src/mdm/agents/qoder.rs
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.2.23",
-  "base_commit_sha": "a9cd16fb7f7b8db772ee0f0e3c5c12d399b4c3ac",
+  "base_commit_sha": "a8125965d067842d5edfbd31124619df89bff2d1",
   "prompts": {
     "c8ed7440bf067969": {
       "agent_id": {
