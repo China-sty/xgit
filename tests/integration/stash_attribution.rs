@@ -1,7 +1,10 @@
 use crate::repos::test_file::ExpectedLineExt;
 use crate::repos::test_repo::TestRepo;
+use git_ai::authorship::attribution_tracker::LineAttribution;
+use git_ai::authorship::authorship_log::{HumanRecord, PromptRecord, SessionRecord};
+use git_ai::authorship::working_log::AgentId;
 use git_ai::git::repo_storage::InitialAttributions;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
@@ -40,6 +43,27 @@ fn lines_to_content(lines: &[String]) -> String {
     let mut content = lines.join("\n");
     content.push('\n');
     content
+}
+
+fn test_agent(id: &str) -> AgentId {
+    AgentId {
+        tool: "test".to_string(),
+        id: id.to_string(),
+        model: "test-model".to_string(),
+    }
+}
+
+fn test_prompt(id: &str) -> PromptRecord {
+    PromptRecord {
+        agent_id: test_agent(id),
+        human_author: None,
+        messages_url: None,
+        total_additions: 0,
+        total_deletions: 0,
+        accepted_lines: 0,
+        overriden_lines: 0,
+        custom_attributes: None,
+    }
 }
 
 #[test]
@@ -1361,6 +1385,106 @@ fn test_stash_operation_deletes_legacy_stashes_dir() {
     assert!(
         stash_v2_dir(&repo).exists(),
         "new stash data should be stored under stashes_v2"
+    );
+}
+
+#[test]
+fn test_partial_stash_trims_unstashed_initial_metadata() {
+    let repo = TestRepo::new();
+    fs::write(repo.path().join("a.txt"), "base a\n").unwrap();
+    fs::write(repo.path().join("b.txt"), "base b\n").unwrap();
+    repo.stage_all_and_commit("initial").unwrap();
+
+    let a_content = "a ai\n";
+    let b_content = "b prompt\nb human\nb session\n";
+    fs::write(repo.path().join("a.txt"), a_content).unwrap();
+    fs::write(repo.path().join("b.txt"), b_content).unwrap();
+
+    let mut files = HashMap::new();
+    files.insert(
+        "a.txt".to_string(),
+        vec![LineAttribution::new(1, 1, "prompt_a".to_string(), None)],
+    );
+    files.insert(
+        "b.txt".to_string(),
+        vec![
+            LineAttribution::new(1, 1, "prompt_b".to_string(), None),
+            LineAttribution::new(2, 2, "h_b".to_string(), None),
+            LineAttribution::new(3, 3, "s_b::t_1".to_string(), None),
+        ],
+    );
+
+    let mut prompts = HashMap::new();
+    prompts.insert("prompt_a".to_string(), test_prompt("prompt-a"));
+    prompts.insert("prompt_b".to_string(), test_prompt("prompt-b"));
+
+    let mut humans = BTreeMap::new();
+    humans.insert(
+        "h_b".to_string(),
+        HumanRecord {
+            author: "B Human <b@example.com>".to_string(),
+        },
+    );
+
+    let mut file_contents = HashMap::new();
+    file_contents.insert("a.txt".to_string(), a_content.to_string());
+    file_contents.insert("b.txt".to_string(), b_content.to_string());
+
+    let mut sessions = BTreeMap::new();
+    sessions.insert(
+        "s_b".to_string(),
+        SessionRecord {
+            agent_id: test_agent("session-b"),
+            human_author: None,
+            custom_attributes: None,
+        },
+    );
+
+    repo.current_working_logs()
+        .write_initial_attributions_with_contents(files, prompts, humans, file_contents, sessions)
+        .unwrap();
+
+    repo.git(&["stash", "push", "--", "a.txt"]).unwrap();
+    repo.sync_daemon_force();
+
+    let stash_initial = single_stash_v2_initial(&repo);
+    assert_eq!(
+        stash_initial.files.keys().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from(["a.txt".to_string()])
+    );
+    assert!(
+        stash_initial.prompts.contains_key("prompt_a"),
+        "stashed file prompt metadata should be retained"
+    );
+    assert!(
+        !stash_initial.prompts.contains_key("prompt_b"),
+        "unstashed file prompt metadata should be dropped"
+    );
+    assert!(
+        stash_initial.humans.is_empty(),
+        "unstashed known-human metadata should be dropped"
+    );
+    assert!(
+        stash_initial.sessions.is_empty(),
+        "unstashed session metadata should be dropped"
+    );
+
+    let live_initial = repo.current_working_logs().read_initial_attributions();
+    assert!(
+        !live_initial.prompts.contains_key("prompt_a"),
+        "live INITIAL should not retain metadata for the stashed file"
+    );
+    assert!(
+        live_initial.prompts.contains_key("prompt_b"),
+        "live INITIAL should retain metadata for the unstashed file"
+    );
+    assert!(
+        live_initial.humans.contains_key("h_b"),
+        "live INITIAL should retain unstashed known-human metadata"
+    );
+    assert!(
+        live_initial.sessions.contains_key("s_b"),
+        "live INITIAL should retain unstashed session metadata"
     );
 }
 

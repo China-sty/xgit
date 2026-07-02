@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::authorship::attribution_tracker::LineAttribution;
 use crate::authorship::authorship_log::{HumanRecord, PromptRecord, SessionRecord};
 use crate::authorship::imara_diff_utils::{DiffOp, capture_diff_slices};
+use crate::authorship::working_log::{Checkpoint, CheckpointKind};
 use crate::error::GitAiError;
 use crate::git::repo_storage::{InitialAttributions, PersistedWorkingLog};
 use crate::git::repository::{
@@ -42,6 +44,10 @@ fn stash_entry_dir(repo: &Repository, stash_sha: &str) -> PathBuf {
 
 fn stash_metadata_path(repo: &Repository, stash_sha: &str) -> PathBuf {
     stash_entry_dir(repo, stash_sha).join("metadata.json")
+}
+
+fn filtered_stash_working_log_base(stash_sha: &str) -> String {
+    format!("_stash_filter_{}", stash_sha)
 }
 
 fn working_log_for_dir(repo: &Repository, dir: PathBuf, base_commit: &str) -> PersistedWorkingLog {
@@ -98,23 +104,24 @@ fn clean_working_log_for_stash(
             .retain(|path, _| !path_matches_any(path, pathspecs));
     }
 
+    trim_initial_metadata_to_referenced_authors(&mut initial);
     persisted.write_initial(initial)?;
 
+    if pathspecs.is_empty() {
+        return persisted.write_all_checkpoints(&[]);
+    }
+
     let checkpoints = persisted.read_all_checkpoints()?;
-    let filtered = if pathspecs.is_empty() {
-        Vec::new()
-    } else {
-        checkpoints
-            .into_iter()
-            .map(|mut checkpoint| {
-                checkpoint
-                    .entries
-                    .retain(|entry| !path_matches_any(&entry.file, pathspecs));
-                checkpoint
-            })
-            .filter(|checkpoint| !checkpoint.entries.is_empty())
-            .collect()
-    };
+    let filtered = checkpoints
+        .into_iter()
+        .map(|mut checkpoint| {
+            checkpoint
+                .entries
+                .retain(|entry| !path_matches_any(&entry.file, pathspecs));
+            checkpoint
+        })
+        .filter(|checkpoint| !checkpoint.entries.is_empty())
+        .collect::<Vec<_>>();
     persisted.write_all_checkpoints(&filtered)?;
     Ok(())
 }
@@ -197,21 +204,47 @@ fn save_stash_attributions(
     head_sha: &str,
     pathspecs: &[String],
 ) -> Result<(), GitAiError> {
-    use crate::authorship::virtual_attribution::VirtualAttributions;
-
     if !repo.storage.has_working_log(head_sha) {
         return Ok(());
     }
 
-    let va =
-        VirtualAttributions::from_persisted_working_log(repo.clone(), head_sha.to_string(), None)?;
-    let mut initial = va.to_initial_working_log_only();
+    let filtered_base = if pathspecs.is_empty() {
+        None
+    } else {
+        let filtered_base = filtered_stash_working_log_base(stash_sha);
+        if let Err(err) = write_path_filtered_working_log(repo, head_sha, &filtered_base, pathspecs)
+        {
+            let _ = fs::remove_dir_all(repo.storage.working_logs.join(&filtered_base));
+            return Err(err);
+        }
+        Some(filtered_base)
+    };
 
-    if !pathspecs.is_empty() {
-        initial
-            .files
-            .retain(|path, _| path_matches_any(path, pathspecs));
+    let base_commit = filtered_base.as_deref().unwrap_or(head_sha);
+    let result =
+        compact_stash_attributions_from_working_log(repo, stash_sha, head_sha, base_commit);
+
+    if let Some(filtered_base) = filtered_base {
+        let _ = fs::remove_dir_all(repo.storage.working_logs.join(filtered_base));
     }
+
+    result
+}
+
+fn compact_stash_attributions_from_working_log(
+    repo: &Repository,
+    stash_sha: &str,
+    stash_base_commit: &str,
+    working_log_base_commit: &str,
+) -> Result<(), GitAiError> {
+    use crate::authorship::virtual_attribution::VirtualAttributions;
+
+    let va = VirtualAttributions::from_persisted_working_log(
+        repo.clone(),
+        working_log_base_commit.to_string(),
+        None,
+    )?;
+    let initial = va.to_initial_working_log_only();
 
     if initial.files.is_empty() {
         return Ok(());
@@ -224,7 +257,7 @@ fn save_stash_attributions(
         }
     }
 
-    let stash_log = working_log_for_dir(repo, stash_entry_dir(repo, stash_sha), head_sha);
+    let stash_log = working_log_for_dir(repo, stash_entry_dir(repo, stash_sha), stash_base_commit);
     stash_log.write_initial_attributions_with_contents(
         initial.files,
         initial.prompts,
@@ -232,6 +265,130 @@ fn save_stash_attributions(
         file_contents,
         initial.sessions,
     )
+}
+
+fn write_path_filtered_working_log(
+    repo: &Repository,
+    source_base_commit: &str,
+    filtered_base_commit: &str,
+    pathspecs: &[String],
+) -> Result<(), GitAiError> {
+    let source_log = repo
+        .storage
+        .working_log_for_base_commit(source_base_commit)?;
+    let filtered_dir = repo.storage.working_logs.join(filtered_base_commit);
+    let _ = fs::remove_dir_all(&filtered_dir);
+    let filtered_log = repo
+        .storage
+        .working_log_for_base_commit(filtered_base_commit)?;
+
+    let mut initial = source_log.read_initial_attributions();
+    initial
+        .files
+        .retain(|path, _| path_matches_any(path, pathspecs));
+    initial
+        .file_blobs
+        .retain(|path, _| path_matches_any(path, pathspecs));
+    trim_initial_metadata_to_referenced_authors(&mut initial);
+    copy_initial_blobs(&source_log, &filtered_log, &initial)?;
+    filtered_log.write_initial(initial)?;
+
+    write_path_filtered_checkpoints(&source_log, &filtered_log, pathspecs)
+}
+
+fn write_path_filtered_checkpoints(
+    source_log: &PersistedWorkingLog,
+    filtered_log: &PersistedWorkingLog,
+    pathspecs: &[String],
+) -> Result<(), GitAiError> {
+    let source_checkpoints = source_log.dir.join("checkpoints.jsonl");
+    let filtered_checkpoints = filtered_log.dir.join("checkpoints.jsonl");
+    if !source_checkpoints.exists() {
+        return filtered_log.write_all_checkpoints(&[]);
+    }
+
+    fs::create_dir_all(&filtered_log.dir)?;
+    let input = fs::File::open(source_checkpoints)?;
+    let mut output = BufWriter::new(fs::File::create(filtered_checkpoints)?);
+    let mut copied_blobs = HashSet::new();
+
+    for line in BufReader::new(input).lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let mut checkpoint: Checkpoint = serde_json::from_str(&line)?;
+        checkpoint
+            .entries
+            .retain(|entry| path_matches_any(&entry.file, pathspecs));
+        if checkpoint.entries.is_empty() {
+            continue;
+        }
+
+        checkpoint.diff.clear();
+        for entry in &checkpoint.entries {
+            copy_blob_sha(source_log, filtered_log, &entry.blob_sha, &mut copied_blobs)?;
+        }
+
+        serde_json::to_writer(&mut output, &checkpoint)?;
+        output.write_all(b"\n")?;
+    }
+
+    output.flush()?;
+    Ok(())
+}
+
+fn copy_blob_sha(
+    source_log: &PersistedWorkingLog,
+    target_log: &PersistedWorkingLog,
+    blob_sha: &str,
+    copied_blobs: &mut HashSet<String>,
+) -> Result<(), GitAiError> {
+    if blob_sha.is_empty() || !copied_blobs.insert(blob_sha.to_string()) {
+        return Ok(());
+    }
+
+    let source = source_log.dir.join("blobs").join(blob_sha);
+    let target_blobs = target_log.dir.join("blobs");
+    fs::create_dir_all(&target_blobs)?;
+    fs::copy(source, target_blobs.join(blob_sha))?;
+    Ok(())
+}
+
+fn trim_initial_metadata_to_referenced_authors(initial: &mut InitialAttributions) {
+    let human_sentinel = CheckpointKind::Human.to_str();
+    let mut referenced_authors = HashSet::new();
+    let mut referenced_sessions = HashSet::new();
+
+    for attrs in initial.files.values() {
+        for attr in attrs {
+            if attr.author_id == human_sentinel {
+                continue;
+            }
+
+            referenced_authors.insert(attr.author_id.clone());
+            if attr.author_id.starts_with("s_") {
+                let session_key = attr
+                    .author_id
+                    .split("::")
+                    .next()
+                    .unwrap_or(&attr.author_id)
+                    .to_string();
+                referenced_sessions.insert(session_key);
+            }
+        }
+    }
+
+    initial
+        .prompts
+        .retain(|author_id, _| referenced_authors.contains(author_id));
+    initial
+        .humans
+        .retain(|author_id, _| referenced_authors.contains(author_id));
+    initial
+        .sessions
+        .retain(|session_id, _| referenced_sessions.contains(session_id));
 }
 
 fn restore_stash_attributions(
