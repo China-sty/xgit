@@ -1,0 +1,12 @@
+# Agent Service ignores
+agent_service/.env
+agent_service/__pycache__/
+agent_service/**/*.pyc
+agent_service/**/*.pyo
+agent_service/**/*.pyd
+agent_service/*.db
+agent_service/*.db-shm
+agent_service/*.db-wal
+agent_service/last_sync_time.txt
+agent_service/*.log
+agent_service/agent_server.log
