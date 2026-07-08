@@ -1,0 +1,56 @@
+agent_service/.gitignore
+  9705479aaad7f245 1-12
+agent_service/retriever/embeddings.py
+  9705479aaad7f245 1-30
+agent_service/prompts/agent_prompts.py
+  9705479aaad7f245 1-12
+agent_service/retriever/vector_store.py
+  9705479aaad7f245 1-21
+agent_service/retriever/sync_vector.py
+  9705479aaad7f245 1-123
+agent_service/agents/simple_agent.py
+  9705479aaad7f245 1-79
+agent_service/schemas/state.py
+  9705479aaad7f245 1-11
+agent_service/config/settings.py
+  9705479aaad7f245 1-36
+agent_service/doc/agent_project_overview.md
+  9705479aaad7f245 41,43,45-67,69,72,77,80,91,116-117,123-124,136
+agent_service/.env.example
+  9705479aaad7f245 1-18
+agent_service/main.py
+  9705479aaad7f245 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.24",
+  "base_commit_sha": "4c0f5c70b256614bfe306fc53ed42188bc1da0ac",
+  "prompts": {
+    "9705479aaad7f245": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a45fbe7c3eeb373669c48f0",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 484,
+      "total_deletions": 76,
+      "accepted_lines": 399,
+      "overriden_lines": 0
+    },
+    "cf533294636629cf": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a464ff8c3eeb373669c4c7e",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}
