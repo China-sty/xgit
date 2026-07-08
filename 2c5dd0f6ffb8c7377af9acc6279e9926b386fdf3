@@ -1,12 +1,12 @@
-agent_service/sync_vector.py
-  9705479aaad7f245 7,24,63-77,80-84,143,145-150,152
+agent_service/.env.example
+  9705479aaad7f245 2,7,11,14
 agent_service/doc/索引器介绍.md
   9705479aaad7f245 1-51
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.2.24",
-  "base_commit_sha": "5a0206831d1e5b7c02874f9b0672c135f9b9182a",
+  "base_commit_sha": "2c5dd0f6ffb8c7377af9acc6279e9926b386fdf3",
   "prompts": {
     "9705479aaad7f245": {
       "agent_id": {
@@ -16,23 +16,10 @@ agent_service/doc/索引器介绍.md
       },
       "human_author": "shaoty1",
       "messages": [],
-      "total_additions": 82,
-      "total_deletions": 7,
-      "accepted_lines": 81,
+      "total_additions": 86,
+      "total_deletions": 11,
+      "accepted_lines": 85,
       "overriden_lines": 0
-    },
-    "cf533294636629cf": {
-      "agent_id": {
-        "tool": "trae",
-        "id": "6a464ff8c3eeb373669c4c7e",
-        "model": "trae-model"
-      },
-      "human_author": "shaoty1",
-      "messages": [],
-      "total_additions": 0,
-      "total_deletions": 0,
-      "accepted_lines": 3,
-      "overriden_lines": 4
     }
   }
 }
