@@ -1,0 +1,25 @@
+agent_service/.env.example
+  9705479aaad7f245 2,7,11,14
+agent_service/doc/索引器介绍.md
+  9705479aaad7f245 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.24",
+  "base_commit_sha": "2c5dd0f6ffb8c7377af9acc6279e9926b386fdf3",
+  "prompts": {
+    "9705479aaad7f245": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a45fbe7c3eeb373669c48f0",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 86,
+      "total_deletions": 11,
+      "accepted_lines": 85,
+      "overriden_lines": 0
+    }
+  }
+}
