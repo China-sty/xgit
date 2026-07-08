@@ -1,0 +1,49 @@
+install_inner
+  e3bf2105c638680c 1-466
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.24",
+  "base_commit_sha": "1f0394f9b56c33cf7a94c508c761b5b55afe1c2a",
+  "prompts": {
+    "9705479aaad7f245": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a45fbe7c3eeb373669c48f0",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 293,
+      "total_deletions": 6,
+      "accepted_lines": 178,
+      "overriden_lines": 0
+    },
+    "cf533294636629cf": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a464ff8c3eeb373669c4c7e",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 14,
+      "total_deletions": 12,
+      "accepted_lines": 14,
+      "overriden_lines": 0
+    },
+    "e3bf2105c638680c": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a46605fc3eeb373669c4d2b",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 479,
+      "total_deletions": 13,
+      "accepted_lines": 466,
+      "overriden_lines": 0
+    }
+  }
+}
