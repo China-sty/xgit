@@ -1,26 +1,36 @@
-agent_service/retriever/embeddings.py
-  9705479aaad7f245 8-14,32-33
+.trae/skills/cb-agent开发/SKILL.md
+  9705479aaad7f245 1-38
+agent_service/test_stream.py
+  9705479aaad7f245 1-66
+agent_service/agents/simple_agent.py
+  9705479aaad7f245 1,14-15,20-27,38-41,74-79,100-140
 agent_service/retriever/vector_store.py
   9705479aaad7f245 6-8
-agent_service/main.py
-  9705479aaad7f245 6-7,9-11,16-20,22-24,32
 agent_service/doc/索引器介绍.md
   9705479aaad7f245 1-51
-agent_service/.env.example
-  9705479aaad7f245 2,7,11,14
-agent_service/config/settings.py
-  9705479aaad7f245 2-7,11-15
-agent_service/agents/simple_agent.py
-  9705479aaad7f245 18-25,36-39,72-77
-agent_service/requirements_agent.txt
-  9705479aaad7f245 1-9
+agent_service/main.py
+  9705479aaad7f245 3,7-8,10-12,17-29,31-33,41
 agent_service/retriever/sync_vector.py
   9705479aaad7f245 29-30,66-67,70-72
+agent_service/config/settings.py
+  9705479aaad7f245 2-7,11-15
+agent_service/requirements_agent.txt
+  9705479aaad7f245 1-9
+agent_service/doc/agent_project_overview.md
+  9705479aaad7f245 81,92,94-100,106,111-114,134-137,140
+agent_service/schemas/state.py
+  9705479aaad7f245 6
+agent_service/retriever/embeddings.py
+  9705479aaad7f245 4,9-15,21-31,35-37,40-42,44-61
+agent_service/.env.example
+  9705479aaad7f245 2,7,11,14
+agent_service/doc/优化方案.md
+  9705479aaad7f245 1-74
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.2.24",
-  "base_commit_sha": "7a6654aa0ab67642f3a00d4f0943c06f61f58620",
+  "base_commit_sha": "bbb7b88bdb37626747c03d915309b51d5968eeed",
   "prompts": {
     "9705479aaad7f245": {
       "agent_id": {
@@ -28,11 +38,11 @@ agent_service/retriever/sync_vector.py
         "id": "6a45fbe7c3eeb373669c48f0",
         "model": "trae-model"
       },
-      "human_author": "shaoty1",
+      "human_author": null,
       "messages": [],
-      "total_additions": 157,
-      "total_deletions": 23,
-      "accepted_lines": 126,
+      "total_additions": 456,
+      "total_deletions": 52,
+      "accepted_lines": 413,
       "overriden_lines": 0
     }
   }
