@@ -1,0 +1,39 @@
+agent_service/retriever/embeddings.py
+  9705479aaad7f245 8-14,32-33
+agent_service/retriever/vector_store.py
+  9705479aaad7f245 6-8
+agent_service/main.py
+  9705479aaad7f245 6-7,9-11,16-20,22-24,32
+agent_service/doc/索引器介绍.md
+  9705479aaad7f245 1-51
+agent_service/.env.example
+  9705479aaad7f245 2,7,11,14
+agent_service/config/settings.py
+  9705479aaad7f245 2-7,11-15
+agent_service/agents/simple_agent.py
+  9705479aaad7f245 18-25,36-39,72-77
+agent_service/requirements_agent.txt
+  9705479aaad7f245 1-9
+agent_service/retriever/sync_vector.py
+  9705479aaad7f245 29-30,66-67,70-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.24",
+  "base_commit_sha": "7a6654aa0ab67642f3a00d4f0943c06f61f58620",
+  "prompts": {
+    "9705479aaad7f245": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a45fbe7c3eeb373669c48f0",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 157,
+      "total_deletions": 23,
+      "accepted_lines": 126,
+      "overriden_lines": 0
+    }
+  }
+}
