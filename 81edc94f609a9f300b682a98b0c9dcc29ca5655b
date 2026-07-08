@@ -1,0 +1,51 @@
+agent_service/.env.example
+  9705479aaad7f245 2,7,11,14
+agent_service/doc/索引器介绍.md
+  9705479aaad7f245 1-51
+agent_service/retriever/sync_vector.py
+  9705479aaad7f245 29-30,66-67,70-72
+agent_service/doc/agent_project_overview.md
+  9705479aaad7f245 81,92,94-100,106,111-114,134-137,140
+agent_service/prompts/agent_prompts.py
+  9705479aaad7f245 3-11,14-29
+.trae/skills/cb-agent开发/SKILL.md
+  9705479aaad7f245 1-38
+agent_service/requirements_agent.txt
+  9705479aaad7f245 1-9
+agent_service/agents/simple_agent.py
+  9705479aaad7f245 1,5-8,17-18,20-32,63,75-86,102-104,107-140,142-208
+agent_service/retriever/vector_store.py
+  9705479aaad7f245 6-8
+agent_service/retriever/embeddings.py
+  9705479aaad7f245 4,9-15,21-31,35-37,40-42,44-61
+agent_service/schemas/state.py
+  9705479aaad7f245 6,10,14
+agent_service/test_stream.py
+  9705479aaad7f245 1-66
+agent_service/doc/优化方案.md
+  9705479aaad7f245 1-74
+agent_service/config/settings.py
+  9705479aaad7f245 2-7,11-15
+agent_service/main.py
+  9705479aaad7f245 3,7-8,10-12,17-29,31-33,41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.24",
+  "base_commit_sha": "edb44592a8b52eba41a9a1e999bbff02f482c36a",
+  "prompts": {
+    "9705479aaad7f245": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a45fbe7c3eeb373669c48f0",
+        "model": "trae-model"
+      },
+      "human_author": null,
+      "messages": [],
+      "total_additions": 610,
+      "total_deletions": 111,
+      "accepted_lines": 513,
+      "overriden_lines": 0
+    }
+  }
+}
