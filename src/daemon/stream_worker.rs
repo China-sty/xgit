@@ -1297,22 +1297,7 @@ impl StreamWorker {
 
     /// Drain immediate priority tasks before shutdown.
     async fn drain_immediate_tasks(&mut self) {
-        let mut immediate_tasks = Vec::new();
-
-        // Collect all immediate tasks from priority queue and delayed tasks
-        while let Some(task) = self.priority_queue.pop() {
-            if task.priority == Priority::Immediate {
-                immediate_tasks.push(task);
-            }
-        }
-        let mut i = 0;
-        while i < self.delayed_tasks.len() {
-            if self.delayed_tasks[i].priority == Priority::Immediate {
-                immediate_tasks.push(self.delayed_tasks.swap_remove(i));
-            } else {
-                i += 1;
-            }
-        }
+        let immediate_tasks = self.take_immediate_tasks();
 
         tracing::info!(tasks = immediate_tasks.len(), "draining immediate tasks");
 
@@ -1343,6 +1328,32 @@ impl StreamWorker {
                 Ok(Ok(())) => {}
             }
         }
+    }
+
+    /// Removes immediate tasks while preserving lower-priority work.
+    fn take_immediate_tasks(&mut self) -> Vec<ProcessingTask> {
+        let mut immediate_tasks = Vec::new();
+        let mut retained_tasks = Vec::new();
+
+        while let Some(task) = self.priority_queue.pop() {
+            if task.priority == Priority::Immediate {
+                immediate_tasks.push(task);
+            } else {
+                retained_tasks.push(task);
+            }
+        }
+        self.priority_queue.extend(retained_tasks);
+
+        let mut i = 0;
+        while i < self.delayed_tasks.len() {
+            if self.delayed_tasks[i].priority == Priority::Immediate {
+                immediate_tasks.push(self.delayed_tasks.swap_remove(i));
+            } else {
+                i += 1;
+            }
+        }
+
+        immediate_tasks
     }
 }
 
@@ -1505,6 +1516,24 @@ mod scheduling_tests {
         worker.delayed_tasks.push(task("earlier", Some(earlier)));
 
         assert_eq!(worker.next_delayed_task_at(), Some(earlier));
+    }
+
+    #[test]
+    fn take_immediate_tasks_preserves_low_priority_tasks() {
+        let (_temp, mut worker, _shutdown) = make_worker();
+        let immediate = task("immediate", None);
+        let mut queued_low = task("queued-low", None);
+        queued_low.priority = Priority::Low;
+        let mut delayed_low = task("delayed-low", None);
+        delayed_low.priority = Priority::Low;
+
+        worker.priority_queue.push(immediate.clone());
+        worker.priority_queue.push(queued_low.clone());
+        worker.delayed_tasks.push(delayed_low.clone());
+
+        assert_eq!(worker.take_immediate_tasks(), vec![immediate]);
+        assert_eq!(worker.priority_queue.into_vec(), vec![queued_low]);
+        assert_eq!(worker.delayed_tasks, vec![delayed_low]);
     }
 
     #[tokio::test]
