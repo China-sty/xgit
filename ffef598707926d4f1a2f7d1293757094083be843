@@ -1,0 +1,23 @@
+src/commands/update.rs
+  6b4b6eb1a1a83abc 12,18-31,33-48,56,67,81,87-99,102-105,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.24",
+  "base_commit_sha": "ffef598707926d4f1a2f7d1293757094083be843",
+  "prompts": {
+    "6b4b6eb1a1a83abc": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a5728e5602c6507e5b26331",
+        "model": "trae-model"
+      },
+      "human_author": "shaoty1",
+      "messages": [],
+      "total_additions": 53,
+      "total_deletions": 3,
+      "accepted_lines": 53,
+      "overriden_lines": 0
+    }
+  }
+}
