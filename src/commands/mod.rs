@@ -1,4 +1,5 @@
 pub mod analyze;
+pub mod r#await;
 pub mod blame;
 pub mod checkpoint_agent;
 pub mod ci_handlers;
@@ -18,7 +19,6 @@ pub mod login;
 pub mod logout;
 pub mod notes_migrate;
 pub mod personal_dashboard;
-pub mod pre_exit;
 pub mod show;
 pub mod show_prompt;
 pub mod status;

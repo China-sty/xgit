@@ -5048,7 +5048,7 @@ fn daemon_self_heals_after_socket_deletion() {
 
 #[test]
 #[serial]
-fn pre_exit_waits_for_metrics_and_notes_flush() {
+fn await_waits_for_metrics_and_notes_flush() {
     let mut mock_api = MockApiServer::start();
     let _api_base_url = ScopedEnvVar::set("GIT_AI_API_BASE_URL", mock_api.base_url());
     let _api_key = ScopedEnvVar::set("GIT_AI_API_KEY", "test-api-key");
@@ -5103,11 +5103,11 @@ fn pre_exit_waits_for_metrics_and_notes_flush() {
 
     // Wait for the daemon to finish and flush telemetry.
     let output = repo
-        .git_ai(&["pre-exit", "--timeout", "30"])
-        .expect("pre-exit should succeed");
+        .git_ai(&["await", "--timeout", "30"])
+        .expect("await should succeed");
     assert!(
         output.contains("finished"),
-        "pre-exit should report finished: {}",
+        "await should report finished: {}",
         output
     );
 
@@ -5129,5 +5129,36 @@ fn pre_exit_waits_for_metrics_and_notes_flush() {
         notes_requests > 0,
         "expected at least one notes upload, got {}",
         notes_requests
+    );
+}
+
+#[test]
+fn await_is_marked_beta_and_returns_promptly_when_idle() {
+    let repo = TestRepo::new_with_daemon_scope(DaemonTestScope::Dedicated);
+
+    let top_level_help = repo
+        .git_ai(&["--help"])
+        .expect("top-level help should succeed");
+    assert!(
+        top_level_help.contains("await [beta]"),
+        "top-level help should mark await as beta: {}",
+        top_level_help
+    );
+
+    let await_help = repo
+        .git_ai(&["await", "--help"])
+        .expect("await help should succeed");
+    assert!(
+        await_help.contains("beta"),
+        "await help should mark the command as beta: {}",
+        await_help
+    );
+
+    let started_at = std::time::Instant::now();
+    repo.git_ai(&["await", "--timeout", "10"])
+        .expect("await should succeed when the daemon is idle");
+    assert!(
+        started_at.elapsed() < Duration::from_secs(4),
+        "await should return promptly instead of waiting for the progress interval"
     );
 }

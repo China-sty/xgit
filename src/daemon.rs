@@ -153,9 +153,9 @@ pub fn daemon_process_active() -> bool {
     DAEMON_PROCESS_ACTIVE.load(Ordering::SeqCst)
 }
 
-/// Result returned by the `pre-exit` control request.
+/// Result returned by the `await` control request.
 #[derive(Debug, Serialize, Deserialize)]
-struct PreExitResult {
+struct AwaitResult {
     done: bool,
     timed_out: bool,
     metrics_remaining: usize,
@@ -5978,10 +5978,10 @@ impl ActorDaemonCoordinator {
 
     /// Wait for the daemon to finish all in-flight work and telemetry flushing.
     ///
-    /// Progress is logged every few seconds. Returns a `PreExitResult` describing
+    /// Progress is logged every few seconds. Returns an `AwaitResult` describing
     /// whether the daemon was idle before the timeout and how much telemetry
     /// (if any) is still pending.
-    async fn pre_exit(&self, timeout_secs: u64) -> PreExitResult {
+    async fn await_completion(&self, timeout_secs: u64) -> AwaitResult {
         use tokio::time::{Duration, Instant, timeout};
 
         let start = Instant::now();
@@ -5989,7 +5989,7 @@ impl ActorDaemonCoordinator {
         let log_interval = Duration::from_secs(3);
         let mut last_log = start;
 
-        let mut result = PreExitResult {
+        let mut result = AwaitResult {
             done: false,
             timed_out: false,
             metrics_remaining: 0,
@@ -5999,8 +5999,8 @@ impl ActorDaemonCoordinator {
         let mut maybe_log = |phase: &str| {
             let now = Instant::now();
             if now - last_log >= log_interval {
-                tracing::info!(phase, "pre-exit: still waiting");
-                eprintln!("pre-exit: still waiting for {}...", phase);
+                tracing::info!(phase, "await: still waiting");
+                eprintln!("await: still waiting for {}...", phase);
                 last_log = now;
             }
         };
@@ -6064,7 +6064,7 @@ impl ActorDaemonCoordinator {
                 match timeout(remaining, worker.drain()).await {
                     Ok(Ok(())) => {}
                     Ok(Err(e)) => {
-                        tracing::warn!(error = %e, "pre-exit: transcript drain failed");
+                        tracing::warn!(error = %e, "await: transcript drain failed");
                     }
                     Err(_) => {
                         result.timed_out = true;
@@ -6089,7 +6089,7 @@ impl ActorDaemonCoordinator {
                         result.notes_remaining = status.notes_remaining;
                     }
                     Ok(Err(e)) => {
-                        tracing::warn!(error = %e, "pre-exit: telemetry flush failed");
+                        tracing::warn!(error = %e, "await: telemetry flush failed");
                     }
                     Err(_) => {
                         result.timed_out = true;
@@ -6214,8 +6214,8 @@ impl ActorDaemonCoordinator {
                 });
                 Ok(ControlResponse::ok(None, None))
             }
-            ControlRequest::PreExit { timeout_secs } => {
-                let result = self.pre_exit(timeout_secs).await;
+            ControlRequest::Await { timeout_secs } => {
+                let result = self.await_completion(timeout_secs).await;
                 serde_json::to_value(result)
                     .map(|v| ControlResponse::ok(None, Some(v)))
                     .map_err(GitAiError::from)
@@ -7571,10 +7571,10 @@ fn checkpoint_control_response_timeout(
         }
         ControlRequest::SyncFamily { .. } => DAEMON_CHECKPOINT_RESPONSE_TIMEOUT,
         ControlRequest::SnapshotWatermarks { .. } => Duration::from_millis(500),
-        // Pre-exit blocks until the requested timeout is reached; give the daemon
+        // Await blocks until the requested timeout is reached; give the daemon
         // a small grace period over the requested limit so the caller sees a
         // response rather than a client-side socket timeout.
-        ControlRequest::PreExit { timeout_secs } => {
+        ControlRequest::Await { timeout_secs } => {
             Duration::from_secs(timeout_secs.saturating_add(5))
         }
         _ => DAEMON_CONTROL_RESPONSE_TIMEOUT,

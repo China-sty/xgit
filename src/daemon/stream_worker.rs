@@ -408,29 +408,10 @@ impl StreamWorker {
                     self.handle_checkpoint_notification(notification).await;
                 }
                 Some(request) = self.sweep_rx.recv() => {
-                    if sweep_enabled {
-                        tracing::info!(trigger = %request.trigger, "triggered transcript sweep requested");
-                        let result = self.run_sweep(request.priority).await;
-                        if let Err(e) = &result {
-                            tracing::error!(trigger = %request.trigger, error = %e, "triggered sweep failed");
-                        }
-                        if let Some(completion) = request.completion {
-                            let _ = completion.send(result.map(|_| ()));
-                        }
-                    } else {
-                        tracing::debug!(
-                            trigger = %request.trigger,
-                            "triggered transcript sweep skipped because transcript_sweep is disabled"
-                        );
-                        if let Some(completion) = request.completion {
-                            let _ = completion.send(Err(
-                                "transcript_sweep feature is disabled".to_string(),
-                            ));
-                        }
-                    }
+                    self.handle_sweep_request(request, sweep_enabled).await;
                 }
                 Some(request) = self.drain_rx.recv() => {
-                    self.handle_drain_request(request).await;
+                    self.handle_drain_request(request, sweep_enabled).await;
                 }
             }
         }
@@ -450,7 +431,38 @@ impl StreamWorker {
         }
     }
 
-    async fn handle_drain_request(&mut self, request: DrainRequest) {
+    async fn handle_sweep_request(&mut self, request: SweepRequest, sweep_enabled: bool) {
+        if sweep_enabled {
+            tracing::info!(trigger = %request.trigger, "triggered transcript sweep requested");
+            let result = self.run_sweep(request.priority).await;
+            if let Err(e) = &result {
+                tracing::error!(trigger = %request.trigger, error = %e, "triggered sweep failed");
+            }
+            if let Some(completion) = request.completion {
+                let _ = completion.send(result.map(|_| ()));
+            }
+        } else {
+            tracing::debug!(
+                trigger = %request.trigger,
+                "triggered transcript sweep skipped because transcript_sweep is disabled"
+            );
+            if let Some(completion) = request.completion {
+                let _ = completion.send(Err("transcript_sweep feature is disabled".to_string()));
+            }
+        }
+    }
+
+    async fn handle_drain_request(&mut self, request: DrainRequest, sweep_enabled: bool) {
+        // Checkpoint and sweep requests use separate channels from the drain
+        // barrier, so consume ingress that was already queued before the barrier.
+        while let Ok(notification) = self.checkpoint_rx.try_recv() {
+            self.handle_checkpoint_notification(notification).await;
+        }
+        while let Ok(sweep_request) = self.sweep_rx.try_recv() {
+            self.handle_sweep_request(sweep_request, sweep_enabled)
+                .await;
+        }
+
         // Process immediate priority tasks that are already queued.
         self.drain_immediate_tasks().await;
 
@@ -1450,10 +1462,15 @@ mod scheduling_tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn make_worker() -> (TempDir, StreamWorker, Arc<Notify>) {
+    fn make_worker() -> (
+        TempDir,
+        StreamWorker,
+        Arc<Notify>,
+        tokio::sync::mpsc::UnboundedSender<CheckpointNotification>,
+    ) {
         let temp = TempDir::new().unwrap();
         let db = Arc::new(StreamsDatabase::open(temp.path().join("streams.db")).unwrap());
-        let (_checkpoint_tx, checkpoint_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (checkpoint_tx, checkpoint_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_sweep_tx, sweep_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_drain_tx, drain_rx) = tokio::sync::mpsc::unbounded_channel();
         let shutdown = Arc::new(Notify::new());
@@ -1471,7 +1488,7 @@ mod scheduling_tests {
             drain_rx,
             sweep_trigger_gate,
         );
-        (temp, worker, shutdown)
+        (temp, worker, shutdown, checkpoint_tx)
     }
 
     fn task(session_id: &str, next_retry_at: Option<std::time::Instant>) -> ProcessingTask {
@@ -1491,7 +1508,7 @@ mod scheduling_tests {
 
     #[test]
     fn promotes_only_ready_delayed_tasks() {
-        let (_temp, mut worker, _shutdown) = make_worker();
+        let (_temp, mut worker, _shutdown, _checkpoint_tx) = make_worker();
         let now = std::time::Instant::now();
         worker.delayed_tasks.push(task("ready", Some(now)));
         worker
@@ -1508,7 +1525,7 @@ mod scheduling_tests {
 
     #[test]
     fn next_delayed_task_at_returns_earliest_retry_deadline() {
-        let (_temp, mut worker, _shutdown) = make_worker();
+        let (_temp, mut worker, _shutdown, _checkpoint_tx) = make_worker();
         let now = std::time::Instant::now();
         let later = now + Duration::from_secs(30);
         let earlier = now + Duration::from_secs(5);
@@ -1520,7 +1537,7 @@ mod scheduling_tests {
 
     #[test]
     fn take_immediate_tasks_preserves_low_priority_tasks() {
-        let (_temp, mut worker, _shutdown) = make_worker();
+        let (_temp, mut worker, _shutdown, _checkpoint_tx) = make_worker();
         let immediate = task("immediate", None);
         let mut queued_low = task("queued-low", None);
         queued_low.priority = Priority::Low;
@@ -1538,7 +1555,7 @@ mod scheduling_tests {
 
     #[tokio::test]
     async fn transient_errors_are_stored_as_delayed_retries_not_ready_work() {
-        let (_temp, mut worker, _shutdown) = make_worker();
+        let (_temp, mut worker, _shutdown, _checkpoint_tx) = make_worker();
 
         worker
             .handle_processing_error(
@@ -1559,7 +1576,7 @@ mod scheduling_tests {
 
     #[tokio::test]
     async fn shutdown_wakes_idle_worker() {
-        let (_temp, worker, shutdown) = make_worker();
+        let (_temp, worker, shutdown, _checkpoint_tx) = make_worker();
         let handle = tokio::spawn(worker.run());
         tokio::task::yield_now().await;
 
@@ -1573,7 +1590,7 @@ mod scheduling_tests {
 
     #[tokio::test]
     async fn shutdown_wakes_worker_sleeping_until_future_retry() {
-        let (_temp, mut worker, shutdown) = make_worker();
+        let (_temp, mut worker, shutdown, _checkpoint_tx) = make_worker();
         worker.delayed_tasks.push(task(
             "future-retry",
             Some(std::time::Instant::now() + Duration::from_secs(60 * 60)),
@@ -1587,6 +1604,39 @@ mod scheduling_tests {
             .await
             .expect("retry-sleeping worker should exit promptly after shutdown notification")
             .expect("worker task should not panic");
+    }
+
+    #[tokio::test]
+    async fn drain_processes_queued_checkpoint_notifications_before_completing() {
+        let (temp, mut worker, _shutdown, checkpoint_tx) = make_worker();
+        checkpoint_tx
+            .send(CheckpointNotification {
+                session_id: "session".to_string(),
+                tool: "unknown".to_string(),
+                trace_id: "trace".to_string(),
+                tool_use_id: None,
+                stream_path: temp.path().join("transcript.jsonl"),
+                repo_work_dir: Some(temp.path().to_path_buf()),
+                external_session_id: "external".to_string(),
+                external_parent_session_id: None,
+            })
+            .unwrap();
+        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
+
+        worker
+            .handle_drain_request(
+                DrainRequest {
+                    completion: completion_tx,
+                },
+                false,
+            )
+            .await;
+
+        completion_rx.await.unwrap();
+        assert!(
+            worker.checkpoint_rx.is_empty(),
+            "drain must process checkpoint notifications queued before the barrier"
+        );
     }
 }
 
