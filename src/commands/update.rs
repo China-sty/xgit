@@ -13,7 +13,7 @@ pub fn run() {
         println!("Starting update via PowerShell...");
         // Get the update script URL from config or fallback to default
         let default_url = "https://gist.githubusercontent.com/China-sty/649413cd6d108990f81638fc1837479f/raw/xgit.ps1";
-        let script_url = crate::config::Config::get().update_script_url().unwrap_or(default_url);
+        let script_url = default_url;
 
         let pid = std::process::id();
         let log_dir = dirs::home_dir()
@@ -82,7 +82,7 @@ pub fn run() {
         println!("Starting update via bash...");
         // Get the update script URL from config or fallback to default
         let default_url = "http://10.99.33.39:8080/release_linux/script/install_inner.sh";
-        let script_url = crate::config::Config::get().update_script_url().unwrap_or(default_url);
+        let script_url = default_url;
 
         let pid = std::process::id();
         let log_dir = dirs::home_dir()

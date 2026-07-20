@@ -2,15 +2,13 @@ use crate::authorship::ignore::effective_ignore_patterns;
 use crate::authorship::internal_db::InternalDatabase;
 use crate::authorship::range_authorship;
 use crate::authorship::stats::stats_command;
+use crate::authorship::working_log::{AgentId, CheckpointKind};
 use crate::commands;
 use crate::commands::checkpoint_agent::agent_presets::{
     AgentCheckpointFlags, AgentCheckpointPreset, AgentRunResult, AiTabPreset, ClaudePreset,
     CodexPreset, ContinueCliPreset, CursorPreset, DroidPreset, GeminiPreset, GithubCopilotPreset,
     QoderPreset, WindsurfPreset, TraePreset,
 };
-use crate::commands::checkpoint_agent::agent_v1_preset::AgentV1Preset;
-use crate::commands::checkpoint_agent::amp_preset::AmpPreset;
-use crate::commands::checkpoint_agent::opencode_preset::OpenCodePreset;
 use crate::config;
 use crate::daemon::ControlRequest;
 use crate::git::find_repository;
@@ -23,6 +21,20 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::IsTerminal;
 use std::io::Read;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn get_all_files_for_mock_ai(working_dir: &str) -> Vec<String> {
+    let output = std::process::Command::new("git")
+        .args(["-C", working_dir, "ls-files", "-z"])
+        .output();
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.split('\0').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect()
+        }
+        _ => Vec::new(),
+    }
+}
 
 pub fn handle_git_ai(args: &[String]) {
     let perf_entry =
@@ -445,6 +457,7 @@ fn handle_checkpoint(args: &[String]) {
     }
 
     let mut agent_run_result = None;
+    let mut repository_working_dir = String::new();
     // Handle preset arguments after parsing all flags
     if !args.is_empty() {
         match args[0].as_str() {
@@ -557,22 +570,6 @@ fn handle_checkpoint(args: &[String]) {
                     }
                 }
             }
-            "amp" => {
-                match AmpPreset.run(AgentCheckpointFlags {
-                    hook_input: hook_input.clone(),
-                }) {
-                    Ok(agent_run) => {
-                        if agent_run.repo_working_dir.is_some() {
-                            repository_working_dir = agent_run.repo_working_dir.clone().unwrap();
-                        }
-                        agent_run_result = Some(agent_run);
-                    }
-                    Err(e) => {
-                        eprintln!("Amp preset error: {}", e);
-                        std::process::exit(0);
-                    }
-                }
-            }
             "ai_tab" => {
                 match AiTabPreset.run(AgentCheckpointFlags {
                     hook_input: hook_input.clone(),
@@ -585,19 +582,6 @@ fn handle_checkpoint(args: &[String]) {
                     }
                     Err(e) => {
                         eprintln!("ai_tab preset error: {}", e);
-                        std::process::exit(0);
-                    }
-                }
-            }
-            "agent-v1" => {
-                match AgentV1Preset.run(AgentCheckpointFlags {
-                    hook_input: hook_input.clone(),
-                }) {
-                    Ok(agent_run) => {
-                        agent_run_result = Some(agent_run);
-                    }
-                    Err(e) => {
-                        eprintln!("Agent V1 preset error: {}", e);
                         std::process::exit(0);
                     }
                 }
@@ -650,28 +634,12 @@ fn handle_checkpoint(args: &[String]) {
                     }
                 }
             }
-            "opencode" => {
-                match OpenCodePreset.run(AgentCheckpointFlags {
-                    hook_input: hook_input.clone(),
-                }) {
-                    Ok(agent_run) => {
-                        if agent_run.repo_working_dir.is_some() {
-                            repository_working_dir = agent_run.repo_working_dir.clone().unwrap();
-                        }
-                        agent_run_result = Some(agent_run);
-                    }
-                    Err(e) => {
-                        eprintln!("OpenCode preset error: {}", e);
-                        std::process::exit(0);
-                    }
-                }
-            }
             "mock_ai" => {
                 let mock_agent_id = format!(
                     "ai-thread-{}",
                     SystemTime::now()
                         .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_nanos())
+                        .map(|d: std::time::Duration| d.as_nanos())
                         .unwrap_or_else(|_| 0)
                 );
 

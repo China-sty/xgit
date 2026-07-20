@@ -1,7 +1,7 @@
 use crate::error::GitAiError;
 use crate::mdm::hook_installer::{HookCheckResult, HookInstaller, HookInstallerParams};
 use crate::mdm::utils::{
-    binary_exists, generate_diff, home_dir, is_git_ai_checkpoint_command, to_windows_git_bash_style_path,
+    binary_exists, generate_diff, home_dir, is_git_ai_checkpoint_command, normalize_windows_path_for_shell,
     write_atomic,
 };
 use serde_json::{Value, json};
@@ -126,7 +126,7 @@ impl HookInstaller for TraeInstaller {
             };
 
             // Build commands with absolute path
-            let binary_path_str = to_windows_git_bash_style_path(&params.binary_path);
+            let binary_path_str = normalize_windows_path_for_shell(&params.binary_path);
             let pre_tool_cmd = format!("{} {}", binary_path_str, TRAE_PRE_TOOL_CMD);
             let post_tool_cmd = format!("{} {}", binary_path_str, TRAE_POST_TOOL_CMD);
 

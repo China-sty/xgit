@@ -1,6 +1,6 @@
 use crate::git::refs::{
     AI_AUTHORSHIP_PUSH_REFSPEC, copy_ref, fallback_merge_notes_ours, merge_notes_from_ref,
-    ref_exists, tracking_ref_for_remote,
+    tracking_ref_for_remote,
 };
 use crate::{
     error::GitAiError,

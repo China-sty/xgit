@@ -1086,18 +1086,14 @@ fn apply_push_side_effect(
     args: &[String],
 ) -> Result<(), GitAiError> {
     use crate::config::NotesBackendKind;
-    use crate::git::cli_parser::is_dry_run;
-    use crate::git::sync_authorship::{push_authorship_notes, push_remote_from_args};
 
     if crate::config::Config::get().notes_backend_kind() == NotesBackendKind::Http {
         tracing::debug!("apply_push_side_effect: skipping authorship push (Http backend)");
         return Ok(());
     }
 
-    let repo = find_repository_in_path(worktree)?;
-    let parsed = parsed_invocation_for_side_effect(command, args);
-    push_hooks::run_pre_push_hook_managed(&parsed, &repo);
-
+    let _repo = find_repository_in_path(worktree)?;
+    let _parsed = parsed_invocation_for_side_effect(command, args);
     crate::utils::spawn_internal_git_ai_subcommand_in_dir(
         Some(worktree),
         "upload-head-metrics",
