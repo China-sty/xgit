@@ -688,6 +688,23 @@ fn resolve_stash_sha(cmd: &crate::daemon::domain::NormalizedCommand) -> Option<&
     })
 }
 
+/// Fallback: resolve `refs/stash` directly from git when the reflog cursor
+/// hasn't picked up the stash entry yet (e.g., proxy mode where git writes
+/// the reflog entry during command execution, after enrich_command reads it).
+fn stash_sha_from_git(worktree: &str) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["-C", worktree, "rev-parse", "--verify", "refs/stash"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !sha.is_empty() && sha != "0000000000000000000000000000000000000000" {
+            return Some(sha);
+        }
+    }
+    None
+}
+
 fn stash_base_head(repo: &Repository, stash_sha: &str) -> Option<String> {
     repo.find_commit(stash_sha.to_string())
         .ok()
@@ -5278,8 +5295,15 @@ impl ActorDaemonCoordinator {
             }
         }
 
-        if let Some(worktree) = cmd.worktree.as_ref() {
-            let worktree = worktree.to_string_lossy().to_string();
+        let worktree = match cmd.worktree.as_ref() {
+            Some(wt) => wt.to_string_lossy().to_string(),
+            None => match std::env::current_dir() {
+                Ok(cwd) => cwd.to_string_lossy().to_string(),
+                Err(_) => return Ok(()),
+            },
+        };
+        {
+            let worktree = &worktree;
             let mut handled_revert_commits = false;
             for event in events {
                 match event {
@@ -5385,18 +5409,20 @@ impl ActorDaemonCoordinator {
                         match kind {
                             crate::daemon::domain::StashOpKind::Push
                             | crate::daemon::domain::StashOpKind::Unknown => {
-                                let resolved_stash =
-                                    cmd.stash_target_oid.as_deref().or_else(|| {
-                                        cmd.ref_changes
-                                        .iter()
-                                        .find(|rc| rc.reference == "refs/stash")
-                                        .map(|rc| rc.new.as_str())
-                                        .filter(|s| {
-                                            !s.is_empty()
-                                                && *s != "0000000000000000000000000000000000000000"
-                                        })
-                                    });
-                                if let Some(stash_sha) = resolved_stash {
+                                let resolved_stash = cmd.stash_target_oid.as_deref().or_else(|| {
+                                    cmd.ref_changes
+                                    .iter()
+                                    .find(|rc| rc.reference == "refs/stash")
+                                    .map(|rc| rc.new.as_str())
+                                    .filter(|s| {
+                                        !s.is_empty()
+                                            && *s != "0000000000000000000000000000000000000000"
+                                    })
+                                });
+                                let resolved_stash_str = resolved_stash
+                                    .map(|s| s.to_string())
+                                    .or_else(|| stash_sha_from_git(&worktree));
+                                if let Some(stash_sha) = resolved_stash_str.as_deref() {
                                     let push_head =
                                         stash_base_head(&repo, stash_sha).or_else(|| head.clone());
                                     if let Some(head_sha) = push_head.as_deref() {
@@ -5408,7 +5434,10 @@ impl ActorDaemonCoordinator {
                                 }
                             }
                             crate::daemon::domain::StashOpKind::Pop => {
-                                if let Some(stash_sha) = resolve_stash_sha(cmd) {
+                                let stash_sha = resolve_stash_sha(cmd)
+                                    .map(|s| s.to_string())
+                                    .or_else(|| stash_sha_from_git(&worktree));
+                                if let Some(ref stash_sha) = stash_sha {
                                     let base_head = stash_base_head(&repo, stash_sha);
                                     let target_head = head.as_deref().or(base_head.as_deref());
                                     crate::authorship::rewrite_stash::handle_stash_pop_or_apply_with_head(
@@ -5418,7 +5447,10 @@ impl ActorDaemonCoordinator {
                             }
                             crate::daemon::domain::StashOpKind::Apply
                             | crate::daemon::domain::StashOpKind::Branch => {
-                                if let Some(stash_sha) = resolve_stash_sha(cmd) {
+                                let stash_sha = resolve_stash_sha(cmd)
+                                    .map(|s| s.to_string())
+                                    .or_else(|| stash_sha_from_git(&worktree));
+                                if let Some(ref stash_sha) = stash_sha {
                                     let effective_head = if matches!(
                                         kind,
                                         crate::daemon::domain::StashOpKind::Branch
@@ -5438,7 +5470,10 @@ impl ActorDaemonCoordinator {
                                 }
                             }
                             crate::daemon::domain::StashOpKind::Drop => {
-                                if let Some(stash_sha) = resolve_stash_sha(cmd) {
+                                let stash_sha = resolve_stash_sha(cmd)
+                                    .map(|s| s.to_string())
+                                    .or_else(|| stash_sha_from_git(&worktree));
+                                if let Some(ref stash_sha) = stash_sha {
                                     crate::authorship::rewrite_stash::handle_stash_drop(
                                         &repo, stash_sha,
                                     )?;
