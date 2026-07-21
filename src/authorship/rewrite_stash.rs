@@ -444,6 +444,13 @@ fn restore_stash_attributions_with_shift(
     let applied_contents =
         reconstruct_stash_applied_contents(repo, stash_sha, current_head, &applied_paths)?;
 
+    // If the isolated stash apply produced no content (e.g., the temp-dir
+    // reconstruction failed on this platform), fall back to a simple restore
+    // without content-based line shifting.
+    if applied_contents.is_empty() {
+        return restore_stash_attributions(repo, stash_sha, current_head);
+    }
+
     for (file_path, attrs) in &initial.files {
         let stash_content = stash_file_contents
             .get(file_path)
