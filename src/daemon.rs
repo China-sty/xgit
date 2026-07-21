@@ -688,12 +688,12 @@ fn resolve_stash_sha(cmd: &crate::daemon::domain::NormalizedCommand) -> Option<&
     })
 }
 
-/// Fallback: resolve `refs/stash` directly from git when the reflog cursor
-/// hasn't picked up the stash entry yet (e.g., proxy mode where git writes
-/// the reflog entry during command execution, after enrich_command reads it).
-fn stash_sha_from_git(worktree: &str) -> Option<String> {
+/// Fallback: resolve a git revision directly via `git rev-parse` when the
+/// reflog cursor hasn't picked up the entry yet (e.g., proxy mode where git
+/// writes the reflog entry during command execution, after enrich_command reads it).
+fn git_rev_parse(worktree: &str, rev: &str) -> Option<String> {
     let output = std::process::Command::new("git")
-        .args(["-C", worktree, "rev-parse", "--verify", "refs/stash"])
+        .args(["-C", worktree, "rev-parse", "--verify", rev])
         .output()
         .ok()?;
     if output.status.success() {
@@ -703,6 +703,13 @@ fn stash_sha_from_git(worktree: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Fallback: resolve `refs/stash` directly from git when the reflog cursor
+/// hasn't picked up the stash entry yet (e.g., proxy mode where git writes
+/// the reflog entry during command execution, after enrich_command reads it).
+fn stash_sha_from_git(worktree: &str) -> Option<String> {
+    git_rev_parse(worktree, "refs/stash")
 }
 
 fn stash_base_head(repo: &Repository, stash_sha: &str) -> Option<String> {
@@ -4794,6 +4801,7 @@ impl ActorDaemonCoordinator {
         // rebased branch tip.
         if let Some((original_head, stored_onto)) = pending_original_head
             && let Some(new_tip) = rebase_new_tip_from_command(cmd, &original_head)
+                .or_else(|| git_rev_parse(&worktree.to_string_lossy(), "HEAD"))
         {
             if original_head != new_tip && !is_ancestor_commit(&repo, &original_head, &new_tip) {
                 let command_rebase_onto =
@@ -5163,7 +5171,8 @@ impl ActorDaemonCoordinator {
                         .map(|(old, _)| old.as_str())
                         .unwrap_or("");
                     let pending_old_head =
-                        strict_rebase_original_head_from_command(cmd, semantic_old_head);
+                        strict_rebase_original_head_from_command(cmd, semantic_old_head)
+                            .or_else(|| git_rev_parse(&worktree.to_string_lossy(), "ORIG_HEAD"));
                     if let Some(old_head) = pending_old_head {
                         let rebase_onto = rebase_start.as_ref().map(|(_, new)| new.clone());
                         if std::env::var("GIT_AI_DEBUG_DAEMON_TRACE")
