@@ -4786,7 +4786,83 @@ impl ActorDaemonCoordinator {
             }
         }
 
+        // When the reflog cursor missed the branch ref_changes (proxy mode timing),
+        // fall back to git rev-parse for rebase and cherry-pick operations so that
+        // authorship notes are still migrated.
         if branch_changes.is_empty() && pending_original_head.is_none() {
+            let is_rebase_completion = rebase_is_control_mode(cmd)
+                || cmd.primary_command.as_deref() == Some("rebase");
+            let is_cherry_pick = cmd.primary_command.as_deref() == Some("cherry-pick");
+            if is_rebase_completion {
+                // ORIG_HEAD is set by git before the rebase starts; HEAD is the new tip.
+                if let Some(orig_head) =
+                    git_rev_parse(&worktree.to_string_lossy(), "ORIG_HEAD")
+                {
+                    let new_head = git_rev_parse(&worktree.to_string_lossy(), "HEAD")
+                        .unwrap_or_else(|| orig_head.clone());
+                    if orig_head != new_head {
+                        let outcome =
+                            crate::authorship::rewrite::handle_non_fast_forward_rewrite_with_operation(
+                                &repo,
+                                &orig_head,
+                                &new_head,
+                                None,
+                                crate::authorship::rewrite::RewriteMetricOperation::Rebase,
+                            )?;
+                        repo.storage.rename_working_log(&orig_head, &new_head)?;
+                        let metric_context =
+                            process_conflict_resolution_working_logs(&repo, &new_head, None)?;
+                        let metric_commits = rewrite_metric_commits_with_context(
+                            outcome.metric_commits,
+                            metric_context,
+                        );
+                        if !metric_commits.is_empty() {
+                            let branch = crate::authorship::rewrite::branch_name_from_ref(
+                                "refs/heads/rebase-fallback",
+                            );
+                            crate::daemon::rewrite_metrics::spawn_rewrite_commit_metrics(
+                                &repo,
+                                rewrite_metric_commits_with_branch(metric_commits, branch),
+                            );
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            if is_cherry_pick {
+                // CHERRY_PICK_HEAD is set by git during cherry-pick; use it to
+                // find the source commit and the new HEAD as destination.
+                if let Some(source_sha) =
+                    git_rev_parse(&worktree.to_string_lossy(), "CHERRY_PICK_HEAD")
+                {
+                    let new_head = git_rev_parse(&worktree.to_string_lossy(), "HEAD")
+                        .unwrap_or_else(|| source_sha.clone());
+                    if source_sha != new_head {
+                        let outcome =
+                            crate::authorship::rewrite::handle_rewrite_event_with_metrics(
+                                &repo,
+                                crate::authorship::rewrite::RewriteEvent::CherryPickComplete {
+                                    sources: vec![source_sha.clone()],
+                                    new_commits: vec![new_head.clone()],
+                                },
+                            )?;
+                        repo.storage.rename_working_log(&source_sha, &new_head)?;
+                        if !outcome.metric_commits.is_empty() {
+                            let branch = crate::authorship::rewrite::branch_name_from_ref(
+                                "refs/heads/cherry-pick-fallback",
+                            );
+                            crate::daemon::rewrite_metrics::spawn_rewrite_commit_metrics(
+                                &repo,
+                                rewrite_metric_commits_with_branch(
+                                    outcome.metric_commits,
+                                    branch,
+                                ),
+                            );
+                        }
+                    }
+                }
+                return Ok(());
+            }
             return Ok(());
         }
 
