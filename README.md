@@ -71,6 +71,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://usegitai.com
 <td align="center"><img src="assets/docs/agents/gray/firebender.png" alt="Firebender" width="160" /></td>
 <td align="center"><a href="https://usegitai.com/docs/cli/add-your-agent">+ Add an Agent</a></td>
 </tr>
+<tr>
+<td align="center"><img src="assets/docs/agents/gray/qoder.svg" alt="Qoder" width="160" /></td>
+<td align="center"><img src="assets/docs/agents/gray/trae.svg" alt="Trae" width="160" /></td>
+<td align="center"><img src="assets/docs/agents/gray/trae.svg" alt="Trae CN" width="160" /></td>
+<td></td>
+<td></td>
+</tr>
 </table>
 
 
