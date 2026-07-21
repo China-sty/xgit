@@ -712,6 +712,21 @@ fn stash_sha_from_git(worktree: &str) -> Option<String> {
     git_rev_parse(worktree, "refs/stash")
 }
 
+/// Fallback for stash pop/apply/drop: after the operation completes, `refs/stash`
+/// has already been updated. Read the reflog to find the stash SHA that was
+/// affected — the most recent reflog entry's old SHA is the popped stash.
+fn stash_sha_from_git_reflog_for_pop(worktree: &str) -> Option<String> {
+    let reflog_path = std::path::Path::new(worktree).join(".git/logs/refs/stash");
+    let content = std::fs::read_to_string(&reflog_path).ok()?;
+    let last_line = content.lines().last()?;
+    let old_sha = last_line.split_whitespace().next()?;
+    if old_sha.len() == 40 && old_sha != "0000000000000000000000000000000000000000" {
+        Some(old_sha.to_string())
+    } else {
+        None
+    }
+}
+
 fn stash_base_head(repo: &Repository, stash_sha: &str) -> Option<String> {
     repo.find_commit(stash_sha.to_string())
         .ok()
@@ -5445,7 +5460,8 @@ impl ActorDaemonCoordinator {
                             crate::daemon::domain::StashOpKind::Pop => {
                                 let stash_sha = resolve_stash_sha(cmd)
                                     .map(|s| s.to_string())
-                                    .or_else(|| stash_sha_from_git(&worktree));
+                                    .or_else(|| stash_sha_from_git(&worktree))
+                                    .or_else(|| stash_sha_from_git_reflog_for_pop(&worktree));
                                 if let Some(ref stash_sha) = stash_sha {
                                     let base_head = stash_base_head(&repo, stash_sha);
                                     let target_head = head.as_deref().or(base_head.as_deref());
@@ -5458,7 +5474,8 @@ impl ActorDaemonCoordinator {
                             | crate::daemon::domain::StashOpKind::Branch => {
                                 let stash_sha = resolve_stash_sha(cmd)
                                     .map(|s| s.to_string())
-                                    .or_else(|| stash_sha_from_git(&worktree));
+                                    .or_else(|| stash_sha_from_git(&worktree))
+                                    .or_else(|| stash_sha_from_git_reflog_for_pop(&worktree));
                                 if let Some(ref stash_sha) = stash_sha {
                                     let effective_head = if matches!(
                                         kind,
@@ -5481,7 +5498,8 @@ impl ActorDaemonCoordinator {
                             crate::daemon::domain::StashOpKind::Drop => {
                                 let stash_sha = resolve_stash_sha(cmd)
                                     .map(|s| s.to_string())
-                                    .or_else(|| stash_sha_from_git(&worktree));
+                                    .or_else(|| stash_sha_from_git(&worktree))
+                                    .or_else(|| stash_sha_from_git_reflog_for_pop(&worktree));
                                 if let Some(ref stash_sha) = stash_sha {
                                     crate::authorship::rewrite_stash::handle_stash_drop(
                                         &repo, stash_sha,
