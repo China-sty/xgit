@@ -4789,7 +4789,13 @@ impl ActorDaemonCoordinator {
         // When the reflog cursor missed the branch ref_changes (proxy mode timing),
         // fall back to git rev-parse for rebase and cherry-pick operations so that
         // authorship notes are still migrated.
-        if branch_changes.is_empty() && pending_original_head.is_none() {
+        // The HEAD fallback above may populate branch_changes with HEAD entries,
+        // so also check that no actual branch ref (refs/heads/*) changes exist.
+        let has_branch_ref_change = cmd
+            .ref_changes
+            .iter()
+            .any(|rc| rc.reference.starts_with("refs/heads/"));
+        if !has_branch_ref_change && pending_original_head.is_none() {
             let is_rebase_completion = rebase_is_control_mode(cmd)
                 || cmd.primary_command.as_deref() == Some("rebase");
             let is_cherry_pick = cmd.primary_command.as_deref() == Some("cherry-pick");
