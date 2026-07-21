@@ -803,8 +803,15 @@ fn handle_checkpoint(args: &[String]) {
         let control_request = ControlRequest::CheckpointRun {
             request: Box::new(request),
         };
-        let send_result =
+        let mut send_result =
             crate::daemon::send_control_request(&config.control_socket_path, &control_request);
+        // If the daemon is busy processing a burst of trace2 events, the first
+        // attempt may time out. Wait briefly and retry once before giving up.
+        if send_result.is_err() {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            send_result =
+                crate::daemon::send_control_request(&config.control_socket_path, &control_request);
+        }
         if perf {
             eprintln!(
                 "[perf] checkpoint: ipc_send={:.1}ms",
@@ -812,7 +819,7 @@ fn handle_checkpoint(args: &[String]) {
             );
         }
         if let Err(e) = send_result {
-            eprintln!("Failed to send checkpoint to background worker: {}", e);
+            eprintln!("Failed to send checkpoint to background worker after retry: {}", e);
             std::process::exit(0);
         }
         sent_count += 1;
