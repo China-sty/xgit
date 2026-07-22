@@ -1114,7 +1114,7 @@ pub(crate) fn commit_metric_attrs(
 /// Record metrics for a committed change.
 /// This is a best-effort operation - failures are silently ignored.
 #[allow(clippy::too_many_arguments)]
-fn record_commit_metrics(
+pub fn record_commit_metrics(
     repo: &Repository,
     commit_sha: &str,
     parent_sha: &str,

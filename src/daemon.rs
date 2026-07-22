@@ -1133,12 +1133,21 @@ fn apply_push_side_effect(
 
     let _repo = find_repository_in_path(worktree)?;
     let _parsed = parsed_invocation_for_side_effect(command, args);
-    crate::utils::spawn_internal_git_ai_subcommand_in_dir(
+    tracing::info!(
+        worktree = %worktree,
+        "push detected, spawning upload-head-metrics"
+    );
+    let spawned = crate::utils::spawn_internal_git_ai_subcommand_in_dir(
         Some(worktree),
         "upload-head-metrics",
         &[],
         "GIT_AI_BACKGROUND_METRICS_WORKER",
         &[],
+    );
+    tracing::info!(
+        worktree = %worktree,
+        spawned = %spawned,
+        "upload-head-metrics spawn result"
     );
 
     Ok(())

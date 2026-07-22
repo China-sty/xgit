@@ -69,6 +69,7 @@ pub fn handle_git_ai(args: &[String]) {
             | "d"
             | "daemon"
             | "debug"
+            | "update"
             | "upgrade"
             | "install-hooks"
             | "install"
@@ -205,6 +206,9 @@ pub fn handle_git_ai(args: &[String]) {
         "ci" => {
             commands::ci_handlers::handle_ci(&args[1..]);
         }
+        "update" => {
+            commands::update::run();
+        }
         "upgrade" => {
             commands::upgrade::run_with_args(&args[1..]);
         }
@@ -246,6 +250,9 @@ pub fn handle_git_ai(args: &[String]) {
         }
         "push-authorship-notes" | "push_authorship_notes" => {
             handle_push_authorship_notes_internal(&args[1..]);
+        }
+        "upload-head-metrics" => {
+            handle_upload_head_metrics_internal(&args[1..]);
         }
         "notes" => {
             handle_notes_subcommand(&args[1..]);
@@ -1080,6 +1087,75 @@ pub(crate) fn handle_push_authorship_notes_internal(args: &[String]) {
         emit_machine_json_error(format!("Failed to serialize command response: {}", e))
     });
     print_machine_json(&response_value);
+}
+
+fn handle_upload_head_metrics_internal(_args: &[String]) {
+    disable_debug_logs_for_machine_command();
+
+    let repo = find_repository(&Vec::new()).unwrap_or_else(|e| {
+        emit_machine_json_error(format!("Failed to find repository: {}", e))
+    });
+
+    let head = repo.head().unwrap_or_else(|e| {
+        emit_machine_json_error(format!("Failed to get HEAD: {}", e))
+    });
+    let commit_sha = head.target().unwrap_or_else(|e| {
+        emit_machine_json_error(format!("Failed to get HEAD target: {}", e))
+    });
+
+    let commit_obj = repo
+        .revparse_single(&commit_sha)
+        .unwrap_or_else(|e| {
+            emit_machine_json_error(format!("Failed to get commit obj: {}", e))
+        })
+        .peel_to_commit()
+        .unwrap_or_else(|e| {
+            emit_machine_json_error(format!("Failed to peel commit: {}", e))
+        });
+
+    let parent_count = commit_obj.parent_count().unwrap_or(0);
+    let parent_sha = if parent_count > 0 {
+        commit_obj
+            .parent(0)
+            .map(|c| c.id())
+            .unwrap_or_else(|_| {
+                "4b825dc642cb6eb9a060e54bf8d69288fbee4904".to_string()
+            })
+    } else {
+        "4b825dc642cb6eb9a060e54bf8d69288fbee4904".to_string()
+    };
+    let human_author = commit_obj
+        .author_name()
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    // Read authorship note from git notes.
+    let authorship_log = crate::git::notes_api::read_authorship(&repo, &commit_sha);
+
+    let ignore_patterns = effective_ignore_patterns(&repo, &[], &[]);
+    let stats = match crate::authorship::stats::stats_for_commit_stats(
+        &repo,
+        &commit_sha,
+        &ignore_patterns,
+    ) {
+        Ok(s) => s,
+        Err(e) => emit_machine_json_error(format!("Failed to compute stats: {}", e)),
+    };
+
+    if let Some(log) = authorship_log {
+        let authorship_note_str = log.serialize_to_string().unwrap_or_default();
+        crate::authorship::post_commit::record_commit_metrics(
+            &repo,
+            &commit_sha,
+            &parent_sha,
+            &human_author,
+            &authorship_note_str,
+            &stats,
+            &[],  // checkpoints: none available in push context
+            None, // hunks_json: not available in push context
+        );
+    }
+
+    print_machine_json(&serde_json::json!({ "ok": true }));
 }
 
 fn handle_ai_blame(args: &[String]) {
