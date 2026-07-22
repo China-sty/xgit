@@ -853,6 +853,7 @@ fn print_cached_notice(cache: &UpdateCache) {
 pub fn maybe_schedule_background_update_check() {
     let config = config::Config::get();
     if config.version_checks_disabled() {
+        tracing::debug!("background update check: version checks disabled, skipping");
         return;
     }
 
@@ -868,17 +869,28 @@ pub fn maybe_schedule_background_update_check() {
     }
 
     if !should_check_for_updates(channel, cache.as_ref()) {
+        tracing::info!(
+            channel = %channel.as_str(),
+            "background update check: not due yet, skipping"
+        );
         return;
     }
 
     let now = current_timestamp();
     let last_spawn = LAST_BACKGROUND_SPAWN.load(Ordering::SeqCst);
     if now.saturating_sub(last_spawn) < BACKGROUND_SPAWN_THROTTLE_SECS {
+        tracing::info!(
+            throttle_secs = BACKGROUND_SPAWN_THROTTLE_SECS,
+            "background update check: throttled, skipping"
+        );
         return;
     }
 
     if spawn_background_upgrade_process() {
         LAST_BACKGROUND_SPAWN.store(now, Ordering::SeqCst);
+        tracing::info!("background update check: spawned upgrade process");
+    } else {
+        tracing::warn!("background update check: failed to spawn upgrade process");
     }
 }
 
