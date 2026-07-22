@@ -851,9 +851,10 @@ fn print_cached_notice(cache: &UpdateCache) {
 }
 
 pub fn maybe_schedule_background_update_check() {
+    tracing::info!("background update check: triggered");
     let config = config::Config::get();
     if config.version_checks_disabled() {
-        tracing::debug!("background update check: version checks disabled, skipping");
+        tracing::info!("background update check: version checks disabled, skipping");
         return;
     }
 
