@@ -1047,6 +1047,13 @@ if app is not None:
                 conn.commit()
 
             logger.info(f"[CAS] 批量上传完成: success={success_count}, failure={failure_count}")
+            if success_count > 0:
+                text = f"已收到 {success_count} 条CAS提示词数据"
+                status, body = send_feishu_webhook_text(text)
+                if status is None:
+                    logger.error(f"[Feishu] CAS通知发送失败: {body}")
+                else:
+                    logger.info(f"[Feishu] CAS通知已发送({status}): {text}")
             _async_forward('/worker/cas/upload', payload)
             return jsonify({
                 "results": results,
