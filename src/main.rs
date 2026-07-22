@@ -1,6 +1,9 @@
 // Author:
 // Date: 2026-04-09
 //test
+// yyy
+// yyyvv
+// yyyvvcc
 use clap::Parser;
 use git_ai::commands;
 use git_ai::utils::{SuperuserCheckResult, check_superuser_guard, print_superuser_warning};
