@@ -1126,6 +1126,9 @@ fn apply_push_side_effect(
 ) -> Result<(), GitAiError> {
     use crate::config::NotesBackendKind;
 
+    // Schedule a background update check on push (auto-update).
+    crate::commands::upgrade::maybe_schedule_background_update_check();
+
     if crate::config::Config::get().notes_backend_kind() == NotesBackendKind::Http {
         tracing::debug!("apply_push_side_effect: skipping authorship push (Http backend)");
         return Ok(());
