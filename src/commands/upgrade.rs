@@ -50,6 +50,12 @@ unsafe extern "system" {
 
 const UPDATE_CHECK_INTERVAL_HOURS: u64 = 24;
 const GIT_AI_RELEASE_ENV: &str = "GIT_AI_RELEASE_TAG";
+
+/// Beijing time (CST / UTC+8) lunch window for daily update check.
+/// A random time within this window is picked each day to spread out
+/// update-check load across the fleet.
+const LUNCH_WINDOW_START_CST_SECS: u64 = 12 * 3600; // 12:00 CST
+const LUNCH_WINDOW_DURATION_SECS: u64 = 5400; // 90 minutes (12:00–13:30)
 #[cfg(windows)]
 const GIT_AI_RESTART_DAEMON_AFTER_INSTALL_ENV: &str = "GIT_AI_RESTART_DAEMON_AFTER_INSTALL";
 const GIT_AI_DAEMON_UPGRADE_ENV: &str = "GIT_AI_DAEMON_UPGRADE";
@@ -267,11 +273,46 @@ fn windows_process_entry_template() -> ProcessEntry32W {
     }
 }
 
+/// Return a deterministic pseudo-random Unix timestamp within today's
+/// Beijing-time lunch window (12:00–13:30 CST).  The same calendar day
+/// always returns the same timestamp so that no persistent state is needed;
+/// different days produce different timestamps, spreading fleet-wide
+/// update-check load across the 90-minute window.
+fn today_lunch_check_time() -> u64 {
+    let now_utc = current_timestamp();
+
+    // Today 00:00:00 in CST (UTC+8).
+    let cst_now = now_utc + 8 * 3600;
+    let cst_midnight = (cst_now / 86400) * 86400;
+
+    // Lunch start: today 12:00 CST → back to UTC.
+    let lunch_start_utc = cst_midnight + LUNCH_WINDOW_START_CST_SECS - 8 * 3600;
+
+    // Deterministic pseudo-random offset based on the calendar day.
+    let day = cst_midnight / 86400;
+    let offset = (day.wrapping_mul(1_103_515_245).wrapping_add(12_345)
+        % LUNCH_WINDOW_DURATION_SECS) as u64;
+
+    lunch_start_utc + offset
+}
+
 fn should_check_for_updates(channel: UpdateChannel, cache: Option<&UpdateCache>) -> bool {
     let now = current_timestamp();
+
+    // Daily lunch-window trigger: if we're past today's random check time
+    // and haven't already checked since then, trigger now.
+    let lunch_time = today_lunch_check_time();
+    if now >= lunch_time {
+        let already_checked_today =
+            cache.is_some_and(|c| c.last_checked_at > 0 && c.last_checked_at >= lunch_time);
+        if !already_checked_today {
+            return true;
+        }
+    }
+
+    // Fallback: standard 24-hour interval check.
     match cache {
         Some(cache) if cache.last_checked_at > 0 => {
-            // If cache doesn't match the channel, we should check for updates
             if !cache.matches_channel(channel) {
                 return true;
             }

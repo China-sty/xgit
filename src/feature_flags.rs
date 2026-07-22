@@ -243,6 +243,8 @@ mod tests {
     #[test]
     fn test_serialization() {
         let flags = FeatureFlags {
+            rewrite_stash: true,
+            inter_commit_move: false,
             auth_keyring: true,
             transcript_streaming: true,
             transcript_sweep: true,
@@ -250,6 +252,9 @@ mod tests {
             bash_checkpoints_v2: true,
             daemon_log_upload: true,
             rewrite_metrics_events: true,
+            async_mode: true,
+            git_hooks_enabled: false,
+            git_hooks_externally_managed: false,
         };
 
         let serialized = serde_json::to_string(&flags).unwrap();
@@ -265,6 +270,8 @@ mod tests {
     #[test]
     fn test_clone_trait() {
         let flags = FeatureFlags {
+            rewrite_stash: true,
+            inter_commit_move: false,
             auth_keyring: true,
             transcript_streaming: true,
             transcript_sweep: true,
@@ -272,6 +279,9 @@ mod tests {
             bash_checkpoints_v2: true,
             daemon_log_upload: true,
             rewrite_metrics_events: true,
+            async_mode: true,
+            git_hooks_enabled: false,
+            git_hooks_externally_managed: false,
         };
         let cloned = flags.clone();
         assert_eq!(cloned.auth_keyring, flags.auth_keyring);
