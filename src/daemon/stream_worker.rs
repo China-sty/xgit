@@ -6,6 +6,7 @@
 
 use crate::authorship::authorship_log_serialization::{generate_session_id, generate_trace_id};
 use crate::config;
+use crate::daemon::control_api::CasSyncPayload;
 use crate::daemon::telemetry_worker::DaemonTelemetryWorkerHandle;
 use crate::daemon::transcript_redaction::redact_json_secrets;
 use crate::metrics::{
@@ -16,6 +17,7 @@ use crate::streams::db::{StreamRecord, StreamsDatabase};
 use crate::streams::types::StreamError;
 use crate::streams::watermark::{WatermarkStrategy, WatermarkType};
 use chrono::{TimeZone, Utc};
+use sha2::{Digest, Sha256};
 use std::collections::{BinaryHeap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1171,6 +1173,50 @@ impl StreamWorker {
 
             if let Err(e) = telemetry.persist_metrics_blocking(&metric_events) {
                 tracing::warn!(%e, "telemetry: failed to persist transcript metrics locally");
+            }
+
+            // CAS upload: only upload user prompts and AI assistant responses.
+            if config::Config::get().prompt_storage() == "default" {
+                let mut cas_records: Vec<CasSyncPayload> = Vec::new();
+                for event in &metric_events {
+                    if event.event_id == 5 {
+                        if let Some(raw_json) = event.values.get(&"0".to_string()) {
+                            // Only upload user prompts and AI assistant responses
+                            let event_type = raw_json.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            if event_type != "user" && event_type != "assistant" {
+                                continue;
+                            }
+                            match serde_json_canonicalizer::to_string(raw_json) {
+                                Ok(canonical) => {
+                                    let mut hasher = Sha256::new();
+                                    hasher.update(canonical.as_bytes());
+                                    let hash = format!("{:x}", hasher.finalize());
+                                    let metadata = serde_json::json!({
+                                        "tool": task.tool,
+                                        "session_id": task.session_id,
+                                    })
+                                    .to_string();
+                                    cas_records.push(CasSyncPayload {
+                                        hash,
+                                        data: canonical,
+                                        metadata: Some(metadata),
+                                    });
+                                }
+                                Err(e) => {
+                                    tracing::warn!(%e, "CAS: failed to canonicalize event");
+                                }
+                            }
+                        }
+                    }
+                }
+                if !cas_records.is_empty() {
+                    tracing::info!(
+                        count = cas_records.len(),
+                        session_id = %task.session_id,
+                        "CAS: submitted user/assistant events for upload"
+                    );
+                    telemetry.submit_cas_sync(cas_records);
+                }
             }
 
             // Backpressure: after synchronous local persistence, this mainly
