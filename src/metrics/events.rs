@@ -2001,10 +2001,17 @@ impl EventValues for OtelTraceValues {
         map
     }
 
-    fn from_sparse(arr: &SparseArray) -> Self {
-        PosEncoded::from_sparse(arr)
-    }
+    fn from_sparse(arr: &SparseArray) -> Self { PosEncoded::from_sparse(arr) }
 }
+
+pub mod commit_link_pos { pub const COMMIT_SHA:usize=0; pub const SESSION_IDS:usize=1; pub const BRANCH:usize=2; pub const DIFF_STAT:usize=3; pub const COMMIT_MESSAGE:usize=4; pub const AUTHOR:usize=5; }
+#[derive(Debug,Clone,Default)] pub struct CommitLinkValues { pub commit_sha:String, pub session_ids:Vec<String>, pub branch:String, pub diff_stat:String, pub commit_message:String, pub author:String }
+impl CommitLinkValues { pub fn new()->Self { Self::default() } }
+impl PosEncoded for CommitLinkValues {
+    fn to_sparse(&self)->SparseArray { let mut m=SparseArray::new(); m.insert(commit_link_pos::COMMIT_SHA.to_string(),serde_json::Value::String(self.commit_sha.clone())); m.insert(commit_link_pos::SESSION_IDS.to_string(),serde_json::Value::Array(self.session_ids.iter().map(|s|serde_json::Value::String(s.clone())).collect())); m.insert(commit_link_pos::BRANCH.to_string(),serde_json::Value::String(self.branch.clone())); m.insert(commit_link_pos::DIFF_STAT.to_string(),serde_json::Value::String(self.diff_stat.clone())); m.insert(commit_link_pos::COMMIT_MESSAGE.to_string(),serde_json::Value::String(self.commit_message.clone())); m.insert(commit_link_pos::AUTHOR.to_string(),serde_json::Value::String(self.author.clone())); m }
+    fn from_sparse(arr:&SparseArray)->Self { Self { commit_sha:arr.get(&commit_link_pos::COMMIT_SHA.to_string()).and_then(|v|v.as_str()).map(String::from).unwrap_or_default(), session_ids:arr.get(&commit_link_pos::SESSION_IDS.to_string()).and_then(|v|v.as_array()).map(|a|a.iter().filter_map(|v|v.as_str().map(String::from)).collect()).unwrap_or_default(), branch:arr.get(&commit_link_pos::BRANCH.to_string()).and_then(|v|v.as_str()).map(String::from).unwrap_or_default(), diff_stat:arr.get(&commit_link_pos::DIFF_STAT.to_string()).and_then(|v|v.as_str()).map(String::from).unwrap_or_default(), commit_message:arr.get(&commit_link_pos::COMMIT_MESSAGE.to_string()).and_then(|v|v.as_str()).map(String::from).unwrap_or_default(), author:arr.get(&commit_link_pos::AUTHOR.to_string()).and_then(|v|v.as_str()).map(String::from).unwrap_or_default() } }
+}
+impl EventValues for CommitLinkValues { fn event_id()->MetricEventId { MetricEventId::CommitLink } fn to_sparse(&self)->SparseArray { PosEncoded::to_sparse(self) } fn into_sparse(self)->SparseArray { PosEncoded::to_sparse(&self) } fn from_sparse(arr:&SparseArray)->Self { PosEncoded::from_sparse(arr) } }
 
 #[cfg(test)]
 mod session_event_tests {

@@ -1119,6 +1119,43 @@ fn parsed_invocation_for_normalized_command(
     }
 }
 
+fn submit_commit_link_on_push(worktree: &str) {
+    let repo = match find_repository_in_path(worktree) { Ok(r) => r, Err(e) => { tracing::warn!("CommitLink: repo err {:?}", e); return; } };
+    let mut args = repo.global_args_for_exec();
+    args.extend(["symbolic-ref".to_string(), "--short".to_string(), "HEAD".to_string()]);
+    let branch = match crate::git::repository::exec_git(&args) { Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(), Err(e) => { tracing::warn!("CommitLink: branch err {:?}", e); return; } };
+    if branch.is_empty() { tracing::warn!("CommitLink: empty branch"); return; }
+    let remotes = match repo.remotes_with_urls() { Ok(r) => r, Err(e) => { tracing::warn!("CommitLink: remotes err {:?}", e); return; } };
+    for (rn, _) in &remotes {
+        let mut ra = repo.global_args_for_exec();
+        ra.extend(["reflog".to_string(), "-3".to_string(), "--format=%H".to_string(), format!("refs/remotes/{}/{}", rn, branch)]);
+        let out = match crate::git::repository::exec_git(&ra) { Ok(o) => o, Err(_) => continue };
+        let txt = String::from_utf8_lossy(&out.stdout).to_string();
+        let shas: Vec<&str> = txt.lines().filter(|l| !l.trim().is_empty()).collect();
+        if shas.len() < 2 || !is_valid_oid(shas[0]) || !is_valid_oid(shas[1]) || shas[0] == shas[1] { continue; }
+        let mut rl = repo.global_args_for_exec();
+        rl.extend(["rev-list".to_string(), format!("{}..{}", shas[1], shas[0])]);
+        let out = match crate::git::repository::exec_git(&rl) { Ok(o) => o, Err(_) => continue };
+        let rev = String::from_utf8_lossy(&out.stdout).to_string();
+        let commits: Vec<&str> = rev.lines().filter(|l| !l.trim().is_empty()).collect();
+        for cs in &commits {
+            let log = match crate::git::notes_api::read_authorship(&repo, cs) { Some(l) => l, None => { tracing::warn!("CommitLink: no authorship for {}", cs); continue; } };
+            let mut ids: Vec<String> = log.metadata.sessions.keys().cloned().collect();
+            ids.extend(log.metadata.prompts.keys().cloned()); ids.sort(); ids.dedup();
+            if ids.is_empty() { tracing::warn!("CommitLink: no sessions for {}", cs); continue; }
+            let mut la = repo.global_args_for_exec();
+            la.extend(["log".to_string(), "--format=%s||%an".to_string(), "-1".to_string(), cs.to_string()]);
+            let info = crate::git::repository::exec_git(&la).map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+            let (msg, author) = info.split_once("||").map(|(m,a)| (m.trim().to_string(), a.trim().to_string())).unwrap_or_default();
+            let values = crate::metrics::events::CommitLinkValues { commit_sha: cs.to_string(), session_ids: ids, branch: branch.clone(), diff_stat: String::new(), commit_message: msg, author };
+            let event = crate::metrics::types::MetricEvent::new(&values, crate::metrics::types::SparseArray::new());
+            crate::daemon::telemetry_worker::submit_daemon_internal_telemetry(vec![crate::daemon::control_api::TelemetryEnvelope::Metrics { events: vec![event] }]);
+            tracing::info!(commit=%cs, branch=%branch, "CommitLink event submitted on push");
+        }
+        break;
+    }
+}
+
 fn apply_push_side_effect(
     worktree: &str,
     command: Option<&str>,
@@ -1128,6 +1165,8 @@ fn apply_push_side_effect(
 
     // Schedule a background update check on push (auto-update).
     crate::commands::upgrade::maybe_schedule_background_update_check();
+
+    submit_commit_link_on_push(worktree);
 
     if crate::config::Config::get().notes_backend_kind() == NotesBackendKind::Http {
         tracing::debug!("apply_push_side_effect: skipping authorship push (Http backend)");

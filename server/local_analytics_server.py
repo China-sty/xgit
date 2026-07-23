@@ -9,7 +9,15 @@ import logging
 import threading
 import urllib.request
 import urllib.error
+import sys
 from datetime import datetime
+
+try:
+    from dotenv import load_dotenv
+    _d = os.path.dirname(os.path.abspath(__file__))
+    _e = os.path.join(_d, 'agent_service', '.env')
+    if os.path.exists(_e): load_dotenv(_e)
+except ImportError: pass
 from collections import defaultdict
 from typing import Dict, List, Set, Optional, Tuple
 
@@ -957,12 +965,82 @@ def update_csv_stats():
         logger.error(f"[Stats] 更新统计 CSV 失败: {e}", exc_info=True)
 
 
+SUMMARY_FEISHU_URL = os.environ.get(
+    "SUMMARY_FEISHU_URL",
+    "https://open.feishu.cn/open-apis/bot/v2/hook/4042172f-0716-4eb8-b703-938d22821f2b",
+)
+
+
+def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
+                           commit_message, author):
+    try:
+        logger.info(f"[Summary] START {commit_sha[:8]} sessions={len(session_ids)}")
+        with sqlite3.connect(DB_PATH, timeout=30.0) as conn:
+            cur = conn.cursor(); cas = []
+            for sid in session_ids:
+                cur.execute("SELECT data FROM cas_records WHERE metadata LIKE ? LIMIT 10", (f'%{sid}%',))
+                for row in cur.fetchall():
+                    try:
+                        d = json.loads(row[0]); t = d.get("type",""); m = d.get("message",{})
+                        if t == "user": cas.append(f"[用户]{m.get('content','')[:500]}")
+                        elif t == "assistant":
+                            for b in (m.get("content") if isinstance(m.get("content"),list) else []):
+                                if b.get("text"): cas.append(f"[AI]{b['text'][:500]}"); break
+                    except Exception: continue
+            conv = "\n".join(cas[-20:]) or "(无)"
+        prompt = f"生成此push的摘要JSON(不要markdown包裹):\nCommit:{commit_sha[:8]} 分支:{branch} 作者:{author}\n提交:{commit_message}\n改动:{diff_stat or '(无)'}\nAI对话:{conv[:4000]}\n输出:{{\"one_liner\":\"一句话\",\"changes\":\"改动说明\",\"conversation\":\"对话摘要\"}}"
+        ak = os.environ.get("SUMMARY_LLM_KEY", "sk-9de9c0de7b8349febffde4bba82e4dbe")
+        bu = os.environ.get("SUMMARY_LLM_URL", "https://api.deepseek.com/v1")
+        md = os.environ.get("SUMMARY_LLM_MODEL", "deepseek-chat")
+        logger.info(f"[Summary] calling {md} url={bu} key={'SET' if ak else 'MISSING'}")
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=bu, api_key=ak, timeout=60)
+            resp = client.chat.completions.create(
+                model=md, messages=[{"role":"user","content":prompt}],
+                temperature=0.3, max_tokens=800)
+            ct = resp.choices[0].message.content.strip()
+        except ImportError:
+            logger.error("[Summary] openai lib not installed, falling back to urllib")
+            req = urllib.request.Request(
+                f"{bu}/chat/completions",
+                data=json.dumps({"model":md,"messages":[{"role":"user","content":prompt}],"temperature":0.3,"max_tokens":800}).encode(),
+                headers={"Content-Type":"application/json","x-api-key":ak}, method="POST")
+            with urllib.request.urlopen(req, timeout=60) as r:
+                ct = json.loads(r.read())["choices"][0]["message"]["content"].strip()
+        if ct.startswith("```"): ct = ct.split("\n",1)[-1]; ct = ct[:-3] if ct.endswith("```") else ct
+        s = json.loads(ct)
+        logger.info(f"[Summary] AI: {s.get('one_liner','')[:80]}")
+        with sqlite3.connect(DB_PATH, timeout=30.0) as conn:
+            conn.execute('''INSERT OR REPLACE INTO push_summaries(commit_sha,branch,session_ids,one_liner,conversation_summary,changes_summary,diff_stat)
+                VALUES(?,?,?,?,?,?,?)''', (commit_sha, branch, json.dumps(session_ids),
+                s.get("one_liner",""), s.get("conversation",""), s.get("changes",""), diff_stat or ""))
+            conn.commit()
+        logger.info(f"[Summary] SAVED {commit_sha[:8]}")
+        card = {"msg_type":"interactive","card":{"header":{"title":{"content":f"🚀 {s.get('one_liner',commit_sha[:8])}","tag":"plain_text"}},
+            "elements":[{"tag":"div","text":{"tag":"lark_md","content":f"**分支** {branch} | **作者** {author}\n{commit_message}"}},
+            {"tag":"hr"},{"tag":"div","text":{"tag":"lark_md","content":f"**📝 改动**\n{s.get('changes','(无)')}"}},
+            {"tag":"hr"},{"tag":"div","text":{"tag":"lark_md","content":f"**💬 对话**\n{s.get('conversation','(无)')}"}}]}}
+        cr = urllib.request.Request(SUMMARY_FEISHU_URL, data=json.dumps(card, ensure_ascii=False).encode(),
+                                     headers={"Content-Type":"application/json"}, method="POST")
+        with urllib.request.urlopen(cr, timeout=10) as r: logger.info(f"[Summary] FEISHU {r.status}")
+    except Exception as e:
+        logger.error(f"[Summary] FAIL: {e}", exc_info=True)
+
+
 def init_db():
     """初始化 SQLite 数据库表结构"""
     with sqlite3.connect(DB_PATH, timeout=30.0) as conn:
         # 启用 WAL 模式，提高并发读写性能
         conn.execute('PRAGMA journal_mode=WAL')
         cursor = conn.cursor()
+
+        # push_summaries 表
+        cursor.execute('''CREATE TABLE IF NOT EXISTS push_summaries(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, commit_sha TEXT UNIQUE NOT NULL,
+            branch TEXT, session_ids TEXT, one_liner TEXT,
+            conversation_summary TEXT, changes_summary TEXT, diff_stat TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
 
         # CAS (Prompt) 数据表
         cursor.execute('''
@@ -1160,6 +1238,20 @@ if app is not None:
                     except Exception:
                         pass
                 conn.commit()
+
+            for event in events:
+                if event.get('e', 0) == 8:
+                    try:
+                        v = event.get('v', {})
+                        sha = v.get("0", ""); sids = list(v.get("1", []))
+                        br = v.get("2", ""); ds = v.get("3", "")
+                        cm = v.get("4", ""); au = v.get("5", "")
+                        logger.info(f"[CommitLink] DETECTED sha={sha[:8]} sids={len(sids)}")
+                        if sha and sids:
+                            threading.Thread(target=_generate_push_summary,
+                                             args=(sha, sids, br, ds, cm, au), daemon=True).start()
+                    except Exception as e:
+                        logger.error(f"[CommitLink] ERR: {e}", exc_info=True)
 
             for developer in notify_developers:
                 text = f"已收到{developer}提交"
