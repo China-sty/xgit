@@ -978,7 +978,10 @@ def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
         with sqlite3.connect(DB_PATH, timeout=30.0) as conn:
             cur = conn.cursor(); cas = []
             for sid in session_ids:
-                cur.execute("SELECT data FROM cas_records WHERE metadata LIKE ? LIMIT 10", (f'%{sid}%',))
+                # Query more records ordered by recency; session may have thousands of records
+                cur.execute(
+                    "SELECT data FROM cas_records WHERE metadata LIKE ? ORDER BY id DESC LIMIT 60",
+                    (f'%{sid}%',))
                 for row in cur.fetchall():
                     try:
                         d = json.loads(row[0]); t = d.get("type",""); m = d.get("message",{})
@@ -987,8 +990,17 @@ def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
                             for b in (m.get("content") if isinstance(m.get("content"),list) else []):
                                 if b.get("text"): cas.append(f"[AI]{b['text'][:500]}"); break
                     except Exception: continue
-            conv = "\n".join(cas[-20:]) or "(无)"
-        prompt = f"生成此push的摘要JSON(不要markdown包裹):\nCommit:{commit_sha[:8]} 分支:{branch} 作者:{author}\n提交:{commit_message}\n改动:{diff_stat or '(无)'}\nAI对话:{conv[:4000]}\n输出:{{\"one_liner\":\"一句话\",\"changes\":\"改动说明\",\"conversation\":\"对话摘要\"}}"
+            # Reverse to chronological order (query was DESC), take last 30 turns
+            cas.reverse()
+            conv = "\n".join(cas[-30:]) or "(无)"
+        prompt = (
+            f"你是一个代码审查助手。请根据以下信息生成此git push的摘要JSON(不要用markdown包裹):\n"
+            f"Commit: {commit_sha[:8]}\n分支: {branch}\n作者: {author}\n"
+            f"提交信息: {commit_message}\n"
+            f"=== 代码改动(git diff --stat) ===\n{diff_stat or '(无)'}\n"
+            f"=== AI对话记录(仅供参考,描述开发者与AI的交互,不是代码改动) ===\n{conv[:3000]}\n"
+            f'输出JSON: {{"one_liner":"一句话概括这次push做了什么","changes":"根据diff_stat描述代码改动","conversation":"根据对话摘要描述开发者与AI讨论了什么"}}'
+        )
         ak = os.environ.get("SUMMARY_LLM_KEY", "sk-9de9c0de7b8349febffde4bba82e4dbe")
         bu = os.environ.get("SUMMARY_LLM_URL", "https://api.deepseek.com/v1")
         md = os.environ.get("SUMMARY_LLM_MODEL", "deepseek-chat")

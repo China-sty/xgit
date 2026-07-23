@@ -1147,7 +1147,14 @@ fn submit_commit_link_on_push(worktree: &str) {
             la.extend(["log".to_string(), "--format=%s||%an".to_string(), "-1".to_string(), cs.to_string()]);
             let info = crate::git::repository::exec_git(&la).map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
             let (msg, author) = info.split_once("||").map(|(m,a)| (m.trim().to_string(), a.trim().to_string())).unwrap_or_default();
-            let values = crate::metrics::events::CommitLinkValues { commit_sha: cs.to_string(), session_ids: ids, branch: branch.clone(), diff_stat: String::new(), commit_message: msg, author };
+            // Collect diff stat for this commit so the summary AI knows what files changed
+            let mut da = repo.global_args_for_exec();
+            da.extend(["diff-tree".to_string(), "--stat".to_string(), "--no-commit-id".to_string(), cs.to_string()]);
+            let diff_stat = crate::git::repository::exec_git(&da)
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            tracing::info!(commit=%cs, diff=%diff_stat, "CommitLink diff stat collected");
+            let values = crate::metrics::events::CommitLinkValues { commit_sha: cs.to_string(), session_ids: ids, branch: branch.clone(), diff_stat, commit_message: msg, author };
             let event = crate::metrics::types::MetricEvent::new(&values, crate::metrics::types::SparseArray::new());
             crate::daemon::telemetry_worker::submit_daemon_internal_telemetry(vec![crate::daemon::control_api::TelemetryEnvelope::Metrics { events: vec![event] }]);
             tracing::info!(commit=%cs, branch=%branch, "CommitLink event submitted on push");
