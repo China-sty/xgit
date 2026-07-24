@@ -174,6 +174,7 @@ pub struct Config {
     api_base_url: String,
     prompt_storage: String,
     default_prompt_storage: Option<String>,
+    enable_push_summary: bool,
     #[serde(serialize_with = "serialize_masked_api_key")]
     api_key: Option<String>,
     quiet: bool,
@@ -251,6 +252,8 @@ pub struct FileConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_prompt_storage: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_push_summary: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quiet: Option<bool>,
@@ -321,6 +324,8 @@ pub struct ConfigPatch {
     pub disable_auto_updates: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_storage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_push_summary: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<AuthorConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -550,6 +555,12 @@ impl Config {
     /// - "local": Messages only stored in sqlite (not in notes, not uploaded)
     pub fn prompt_storage(&self) -> &str {
         &self.prompt_storage
+    }
+
+    /// Whether to submit CommitLink events on push for AI summary generation.
+    /// Defaults to false (opt-in). Set `enable_push_summary = true` in config.
+    pub fn enable_push_summary(&self) -> bool {
+        self.enable_push_summary
     }
 
     /// Returns the effective prompt storage mode for a given repository.
@@ -1068,6 +1079,12 @@ fn build_config() -> Config {
         }
     };
 
+    // Get enable_push_summary setting (defaults to false — opt-in)
+    let enable_push_summary = file_cfg
+        .as_ref()
+        .and_then(|c| c.enable_push_summary)
+        .unwrap_or(false);
+
     // Get default_prompt_storage setting (fallback for repos not in include list)
     // Valid values: "default", "notes", "local", or None (defaults to "local")
     let default_prompt_storage = file_cfg
@@ -1227,6 +1244,7 @@ fn build_config() -> Config {
             api_base_url,
             prompt_storage,
             default_prompt_storage,
+            enable_push_summary,
             api_key,
             quiet,
             allow_superuser,
@@ -1260,6 +1278,7 @@ fn build_config() -> Config {
         api_base_url,
         prompt_storage,
         default_prompt_storage,
+        enable_push_summary,
         api_key,
         quiet,
         allow_superuser,
@@ -1683,6 +1702,9 @@ fn apply_test_config_patch(config: &mut Config) {
                 );
             }
         }
+        if let Some(enable_push_summary) = patch.enable_push_summary {
+            config.enable_push_summary = enable_push_summary;
+        }
         if let Some(custom_attributes) = patch.custom_attributes {
             config.custom_attributes = custom_attributes;
         }
@@ -1759,6 +1781,7 @@ mod tests {
             api_base_url: DEFAULT_API_BASE_URL.to_string(),
             prompt_storage: "default".to_string(),
             default_prompt_storage: None,
+            enable_push_summary: false,
             api_key: None,
             quiet: false,
             allow_superuser: false,
@@ -2004,6 +2027,7 @@ mod tests {
             api_base_url: DEFAULT_API_BASE_URL.to_string(),
             prompt_storage: "default".to_string(),
             default_prompt_storage: None,
+            enable_push_summary: false,
             api_key: None,
             quiet: false,
             allow_superuser: false,

@@ -970,11 +970,48 @@ SUMMARY_FEISHU_URL = os.environ.get(
     "https://open.feishu.cn/open-apis/bot/v2/hook/4042172f-0716-4eb8-b703-938d22821f2b",
 )
 
+# Circuit breaker for LLM summary generation (persisted to file).
+_CIRCUIT_BREAKER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'summary_circuit_breaker.txt')
+
+
+def _read_circuit_breaker():
+    """Return True if circuit breaker is open (LLM calls blocked)."""
+    try:
+        if os.path.exists(_CIRCUIT_BREAKER_FILE):
+            with open(_CIRCUIT_BREAKER_FILE, 'r') as f:
+                return f.read().strip() == 'open'
+    except Exception:
+        pass
+    return False
+
+
+def _set_circuit_breaker(open_state):
+    """Set circuit breaker state. open_state=True → block LLM calls."""
+    try:
+        with open(_CIRCUIT_BREAKER_FILE, 'w') as f:
+            f.write('open' if open_state else 'closed')
+        return True
+    except Exception as e:
+        logger.error(f"[CircuitBreaker] Failed to write state: {e}")
+        return False
+
 
 def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
                            commit_message, author):
     try:
         logger.info(f"[Summary] START {commit_sha[:8]} sessions={len(session_ids)}")
+
+        if _read_circuit_breaker():
+            logger.info(f"[Summary] CIRCUIT BREAKER OPEN — skipping LLM call for {commit_sha[:8]}")
+            with sqlite3.connect(DB_PATH, timeout=30.0) as conn:
+                conn.execute(
+                    'INSERT OR REPLACE INTO push_summaries(commit_sha,branch,session_ids,one_liner,conversation_summary,changes_summary,diff_stat,why) VALUES(?,?,?,?,?,?,?,?)',
+                    (commit_sha, branch, json.dumps(session_ids),
+                     commit_message, '(熔断中)', diff_stat or '(无)', '(熔断中)'))
+                conn.commit()
+            logger.info(f"[Summary] SAVED (breaker) {commit_sha[:8]}")
+            return
+
         with sqlite3.connect(DB_PATH, timeout=30.0) as conn:
             cur = conn.cursor(); cas = []
             for sid in session_ids:
@@ -1228,6 +1265,29 @@ if app is not None:
         except Exception as e:
             logger.error(f"[CAS] Read Error: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
+
+    # ==================== 摘要熔断 API ====================
+
+    @app.route('/api/summary/circuit-breaker', methods=['GET'])
+    def get_circuit_breaker():
+        """查询 LLM 摘要熔断状态"""
+        is_open = _read_circuit_breaker()
+        logger.info(f"[CircuitBreaker] GET status: {'OPEN' if is_open else 'CLOSED'}")
+        return jsonify({"code": 0, "data": {"open": is_open}}), 200
+
+    @app.route('/api/summary/circuit-breaker', methods=['POST'])
+    def toggle_circuit_breaker():
+        """切换 LLM 摘要熔断状态: {"open": true|false}"""
+        try:
+            body = request.get_json(silent=True) or {}
+            open_state = bool(body.get('open', False))
+            ok = _set_circuit_breaker(open_state)
+            state = 'OPEN' if open_state else 'CLOSED'
+            logger.info(f"[CircuitBreaker] TOGGLE → {state} ok={ok}")
+            return jsonify({"code": 0 if ok else -1, "data": {"open": open_state}, "message": f"Breaker is now {state}"}), 200
+        except Exception as e:
+            logger.error(f"[CircuitBreaker] Toggle error: {e}", exc_info=True)
+            return jsonify({"code": -1, "error": str(e)}), 500
 
     @app.route('/worker/metrics/upload', methods=['POST'])
     def metrics_upload():

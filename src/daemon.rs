@@ -1180,7 +1180,9 @@ fn apply_push_side_effect(
     // Schedule a background update check on push (auto-update).
     crate::commands::upgrade::maybe_schedule_background_update_check();
 
-    submit_commit_link_on_push(worktree);
+    if crate::config::Config::get().enable_push_summary() {
+        submit_commit_link_on_push(worktree);
+    }
 
     if crate::config::Config::get().notes_backend_kind() == NotesBackendKind::Http {
         tracing::debug!("apply_push_side_effect: skipping authorship push (Http backend)");
