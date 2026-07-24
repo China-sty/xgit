@@ -448,3 +448,5 @@ curl -X POST http://<服务器>:5000/api/summary/circuit-breaker \
 curl http://<服务器>:5000/api/summary/circuit-breaker
 # → {"code":0,"data":{"open":false}}
 ```
+
+> **配置文件路径**: `~/.git-ai/config.json`（JSON 格式），非 `.toml`。
