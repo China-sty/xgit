@@ -994,12 +994,14 @@ def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
             cas.reverse()
             conv = "\n".join(cas[-30:]) or "(无)"
         prompt = (
-            f"你是一个代码审查助手。请根据以下信息生成此git push的摘要JSON(不要用markdown包裹):\n"
-            f"Commit: {commit_sha[:8]}\n分支: {branch}\n作者: {author}\n"
+            f"你是代码审查助手，生成此git push的摘要JSON(不要用markdown包裹):\n"
+            f"Commit: {commit_sha[:8]} | 分支: {branch} | 作者: {author}\n"
             f"提交信息: {commit_message}\n"
-            f"=== 代码改动(git diff --stat) ===\n{diff_stat or '(无)'}\n"
-            f"=== AI对话记录(仅供参考,描述开发者与AI的交互,不是代码改动) ===\n{conv[:3000]}\n"
-            f'输出JSON: {{"one_liner":"一句话概括这次push做了什么","changes":"根据diff_stat描述代码改动","conversation":"根据对话摘要描述开发者与AI讨论了什么"}}'
+            f"=== git diff --stat (这就是代码改动，据此描述) ===\n{diff_stat or '(无)'}\n"
+            f"=== AI对话(仅供参考，描述人机交互过程，不要复述代码改动) ===\n{conv[:3000]}\n"
+            f'输出JSON(四个字段都要简短):\n'
+            f'{{"one_liner":"≤20字概括","changes":"按文件列出改动，如 src/foo.rs:+12-3","why":"为什么要做这个改动",'
+            f'"conversation":"开发者问了什么→AI怎么帮的，一句话"}}'
         )
         ak = os.environ.get("SUMMARY_LLM_KEY", "sk-9de9c0de7b8349febffde4bba82e4dbe")
         bu = os.environ.get("SUMMARY_LLM_URL", "https://api.deepseek.com/v1")
@@ -1024,15 +1026,22 @@ def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
         s = json.loads(ct)
         logger.info(f"[Summary] AI: {s.get('one_liner','')[:80]}")
         with sqlite3.connect(DB_PATH, timeout=30.0) as conn:
-            conn.execute('''INSERT OR REPLACE INTO push_summaries(commit_sha,branch,session_ids,one_liner,conversation_summary,changes_summary,diff_stat)
-                VALUES(?,?,?,?,?,?,?)''', (commit_sha, branch, json.dumps(session_ids),
-                s.get("one_liner",""), s.get("conversation",""), s.get("changes",""), diff_stat or ""))
+            conn.execute('''INSERT OR REPLACE INTO push_summaries(commit_sha,branch,session_ids,one_liner,conversation_summary,changes_summary,diff_stat,why)
+                VALUES(?,?,?,?,?,?,?,?)''', (commit_sha, branch, json.dumps(session_ids),
+                s.get("one_liner",""), s.get("conversation",""), s.get("changes",""), diff_stat or "",
+                s.get("why","")))
             conn.commit()
         logger.info(f"[Summary] SAVED {commit_sha[:8]}")
         card = {"msg_type":"interactive","card":{"header":{"title":{"content":f"🚀 {s.get('one_liner',commit_sha[:8])}","tag":"plain_text"}},
-            "elements":[{"tag":"div","text":{"tag":"lark_md","content":f"**分支** {branch} | **作者** {author}\n{commit_message}"}},
-            {"tag":"hr"},{"tag":"div","text":{"tag":"lark_md","content":f"**📝 改动**\n{s.get('changes','(无)')}"}},
-            {"tag":"hr"},{"tag":"div","text":{"tag":"lark_md","content":f"**💬 对话**\n{s.get('conversation','(无)')}"}}]}}
+            "elements":[
+            {"tag":"div","text":{"tag":"lark_md","content":f"**分支** {branch} | **作者** {author}\n{commit_message}"}},
+            {"tag":"hr"},
+            {"tag":"div","text":{"tag":"lark_md","content":f"**📝 改动**\n{s.get('changes','(无)')}"}},
+            {"tag":"hr"},
+            {"tag":"div","text":{"tag":"lark_md","content":f"**❓ 原因**\n{s.get('why','(无)')}"}},
+            {"tag":"hr"},
+            {"tag":"div","text":{"tag":"lark_md","content":f"**💬 对话**\n{s.get('conversation','(无)')}"}},
+            ]}}
         cr = urllib.request.Request(SUMMARY_FEISHU_URL, data=json.dumps(card, ensure_ascii=False).encode(),
                                      headers={"Content-Type":"application/json"}, method="POST")
         with urllib.request.urlopen(cr, timeout=10) as r: logger.info(f"[Summary] FEISHU {r.status}")
@@ -1052,7 +1061,10 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, commit_sha TEXT UNIQUE NOT NULL,
             branch TEXT, session_ids TEXT, one_liner TEXT,
             conversation_summary TEXT, changes_summary TEXT, diff_stat TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+            why TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        # migrate: add why column if missing
+        try: cursor.execute("ALTER TABLE push_summaries ADD COLUMN why TEXT")
+        except: pass
 
         # CAS (Prompt) 数据表
         cursor.execute('''
