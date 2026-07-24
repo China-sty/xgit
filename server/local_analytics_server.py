@@ -1034,7 +1034,7 @@ def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
         logger.info(f"[Summary] SAVED {commit_sha[:8]}")
         card = {"msg_type":"interactive","card":{"header":{"title":{"content":f"🚀 {s.get('one_liner',commit_sha[:8])}","tag":"plain_text"}},
             "elements":[
-            {"tag":"div","text":{"tag":"lark_md","content":f"**分支** {branch} | **作者** {author}\n{commit_message}"}},
+            {"tag":"div","text":{"tag":"lark_md","content":f"**分支** {branch} | **作者** {author}\n`{commit_sha[:8]}` {commit_message}"}},
             {"tag":"hr"},
             {"tag":"div","text":{"tag":"lark_md","content":f"**📝 改动**\n{s.get('changes','(无)')}"}},
             {"tag":"hr"},
