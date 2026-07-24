@@ -338,5 +338,113 @@ Git Hook 触发
 | `server/local_analytics_server.py` | 1104-1168 | `POST /worker/cas/upload` 接收 |
 | `server/local_analytics_server.py` | 1170-1200 | `GET /worker/cas/` 读取 |
 | `server/local_analytics_server.py` | 978-995 | Push 摘要中的 CAS 消费 |
+| `server/local_analytics_server.py` | 974-996 | 熔断器读写函数 |
+| `server/local_analytics_server.py` | 1269-1297 | `/api/summary/circuit-breaker` 端点 |
+| `src/config.rs` | 555-558 | `enable_push_summary()` 访问器 |
+| `src/daemon.rs` | 1182 | `enable_push_summary` 条件门控 |
 
-> **配置**: 设置 `enable_push_summary = true` 开启 push 摘要功能（默认关闭，需 opt-in）。
+## Push 摘要配置
+
+### `enable_push_summary` 配置字
+
+**文件**: `src/config.rs` — 控制 push 时是否提交 CommitLink 事件触发摘要生成。
+
+| 值 | 默认 | 行为 |
+|----|------|------|
+| `true` | — | push 时提交 CommitLink → 服务器生成 AI 摘要 → 飞书卡片 |
+| `false` | ✅ | 不提交 CommitLink，不生成摘要 |
+
+配置方式（`~/.git-ai/config.toml` 或 repo 级 `.git-ai.toml`）：
+
+```toml
+enable_push_summary = true
+```
+
+**设计意图**: 摘要生成每次消耗 LLM token。此配置为 opt-in，只有明确开启的用户才会触发摘要，避免未经授权的 token 消耗。
+
+**生效位置** (`src/daemon.rs:1182`):
+
+```rust
+if crate::config::Config::get().enable_push_summary() {
+    submit_commit_link_on_push(worktree);
+}
+```
+
+### CommitLink → Push 摘要 全链路
+
+```
+git push
+  ↓ [enable_push_summary == true?]
+submit_commit_link_on_push(worktree)
+  ↓
+git reflog → 找到 push range (new..old)
+  ↓
+git rev-list → 列出本次 push 的 commits
+  ↓
+read_authorship → 提取 session_ids
+  ↓
+git diff-tree --stat → 收集文件改动
+  ↓
+commit_sha, session_ids, branch, diff_stat, commit_message, author
+  ↓ MetricEvent(event_id=8, CommitLink)
+metrics_events 表 → 服务器 metrics_upload 检测 event_type=8
+  ↓
+_generate_push_summary()
+  ↓
+CAS 反查 → DeepSeek API → push_summaries 表
+  ↓
+飞书卡片通知
+```
+
+## LLM 熔断机制
+
+**文件**: `server/local_analytics_server.py:973-996`
+
+运行时控
+
+制是否调用 DeepSeek API，避免持续消耗 token。
+
+### 状态存储
+
+熔断状态持久化在 `Y:\acsp\summary_circuit_breaker.txt`，文件内容：
+- `open` — 熔断打开，**阻断** LLM 调用
+- `closed` — 熔断关闭，**正常**调用 LLM
+
+### API 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/summary/circuit-breaker` | 查询当前状态 |
+| `POST` | `/api/summary/circuit-breaker` | 切换熔断 `{"open": true/false}` |
+
+### 熔断时行为
+
+熔断打开时，`_generate_push_summary` 在调用 DeepSeek 前检查并**立即返回**：
+
+```python
+if _read_circuit_breaker():
+    logger.info(f"[Summary] CIRCUIT BREAKER OPEN — skipping LLM call")
+    # 直接存 commit message 为摘要，不调用模型
+    conn.execute('INSERT ... VALUES(..., "(熔断中)", ...)')
+    return
+```
+
+此时 push 仍会记录到 `push_summaries` 表，但内容仅为原始 commit message，**不消耗 token**。
+
+### 使用示例
+
+```bash
+# 打开熔断（阻断 LLM，省 token）
+curl -X POST http://<服务器>:5000/api/summary/circuit-breaker \
+  -H "Content-Type: application/json" \
+  -d '{"open": true}'
+
+# 关闭熔断（恢复 LLM 调用）
+curl -X POST http://<服务器>:5000/api/summary/circuit-breaker \
+  -H "Content-Type: application/json" \
+  -d '{"open": false}'
+
+# 查看状态
+curl http://<服务器>:5000/api/summary/circuit-breaker
+# → {"code":0,"data":{"open":false}}
+```
