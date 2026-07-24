@@ -456,3 +456,5 @@ curl http://<服务器>:5000/api/summary/circuit-breaker
 > **Linter 注意**: config.json 可能被自动还原，需在 daemon 启动前配置好。
 
 > **提示**: 关闭 `disable_auto_updates` 防止自编译二进制被 GitHub Release 覆盖。
+
+> **安装**: `$env:GIT_AI_LOCAL_BINARY="target/debug/git-ai.exe"; .\install.ps1` 用本地编译版安装。
