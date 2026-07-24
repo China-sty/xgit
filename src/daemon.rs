@@ -1127,6 +1127,7 @@ fn submit_commit_link_on_push(worktree: &str) {
     if branch.is_empty() { tracing::warn!("CommitLink: empty branch"); return; }
     let remotes = match repo.remotes_with_urls() { Ok(r) => r, Err(e) => { tracing::warn!("CommitLink: remotes err {:?}", e); return; } };
     tracing::info!(branch=%branch, remote_count=remotes.len(), "CommitLink: searching for push range");
+    let mut found = false;
     for (rn, _) in &remotes {
         let refspec = format!("refs/remotes/{}/{}", rn, branch);
         let mut ra = repo.global_args_for_exec();
@@ -1164,10 +1165,13 @@ fn submit_commit_link_on_push(worktree: &str) {
             let event = crate::metrics::types::MetricEvent::new(&values, crate::metrics::types::SparseArray::new());
             crate::daemon::telemetry_worker::submit_daemon_internal_telemetry(vec![crate::daemon::control_api::TelemetryEnvelope::Metrics { events: vec![event] }]);
             tracing::info!(commit=%cs, branch=%branch, "CommitLink event submitted on push");
+            found = true;
         }
         break;
     }
-    tracing::warn!(branch=%branch, "CommitLink: no remote with valid push range found");
+    if !found {
+        tracing::warn!(branch=%branch, "CommitLink: no remote with valid push range found");
+    }
 }
 
 fn apply_push_side_effect(
