@@ -338,3 +338,5 @@ Git Hook 触发
 | `server/local_analytics_server.py` | 1104-1168 | `POST /worker/cas/upload` 接收 |
 | `server/local_analytics_server.py` | 1170-1200 | `GET /worker/cas/` 读取 |
 | `server/local_analytics_server.py` | 978-995 | Push 摘要中的 CAS 消费 |
+
+> **配置**: 设置 `enable_push_summary = true` 开启 push 摘要功能（默认关闭，需 opt-in）。
