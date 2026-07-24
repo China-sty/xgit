@@ -450,3 +450,5 @@ curl http://<服务器>:5000/api/summary/circuit-breaker
 ```
 
 > **配置文件路径**: `~/.git-ai/config.json`（JSON 格式），非 `.toml`。
+
+> **注意**: 修改 `config.json` 后需重启 daemon 才能生效（`git-ai bg shutdown && git-ai bg start`）。
