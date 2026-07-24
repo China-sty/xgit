@@ -1126,18 +1126,24 @@ fn submit_commit_link_on_push(worktree: &str) {
     let branch = match crate::git::repository::exec_git(&args) { Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(), Err(e) => { tracing::warn!("CommitLink: branch err {:?}", e); return; } };
     if branch.is_empty() { tracing::warn!("CommitLink: empty branch"); return; }
     let remotes = match repo.remotes_with_urls() { Ok(r) => r, Err(e) => { tracing::warn!("CommitLink: remotes err {:?}", e); return; } };
+    tracing::info!(branch=%branch, remote_count=remotes.len(), "CommitLink: searching for push range");
     for (rn, _) in &remotes {
+        let refspec = format!("refs/remotes/{}/{}", rn, branch);
         let mut ra = repo.global_args_for_exec();
-        ra.extend(["reflog".to_string(), "-3".to_string(), "--format=%H".to_string(), format!("refs/remotes/{}/{}", rn, branch)]);
-        let out = match crate::git::repository::exec_git(&ra) { Ok(o) => o, Err(_) => continue };
+        ra.extend(["reflog".to_string(), "-3".to_string(), "--format=%H".to_string(), refspec.clone()]);
+        let out = match crate::git::repository::exec_git(&ra) { Ok(o) => o, Err(e) => { tracing::warn!(remote=%rn, err=?e, "CommitLink: reflog failed"); continue; } };
         let txt = String::from_utf8_lossy(&out.stdout).to_string();
         let shas: Vec<&str> = txt.lines().filter(|l| !l.trim().is_empty()).collect();
-        if shas.len() < 2 || !is_valid_oid(shas[0]) || !is_valid_oid(shas[1]) || shas[0] == shas[1] { continue; }
+        tracing::info!(remote=%rn, reflog_entries=shas.len(), "CommitLink: reflog result");
+        if shas.len() < 2 { tracing::warn!(remote=%rn, entries=shas.len(), "CommitLink: too few reflog entries"); continue; }
+        if !is_valid_oid(shas[0]) || !is_valid_oid(shas[1]) { tracing::warn!(remote=%rn, "CommitLink: invalid OID in reflog"); continue; }
+        if shas[0] == shas[1] { tracing::warn!(remote=%rn, "CommitLink: push SHAs identical, no new commits"); continue; }
         let mut rl = repo.global_args_for_exec();
         rl.extend(["rev-list".to_string(), format!("{}..{}", shas[1], shas[0])]);
-        let out = match crate::git::repository::exec_git(&rl) { Ok(o) => o, Err(_) => continue };
+        let out = match crate::git::repository::exec_git(&rl) { Ok(o) => o, Err(e) => { tracing::warn!(remote=%rn, err=?e, "CommitLink: rev-list failed"); continue; } };
         let rev = String::from_utf8_lossy(&out.stdout).to_string();
         let commits: Vec<&str> = rev.lines().filter(|l| !l.trim().is_empty()).collect();
+        tracing::info!(remote=%rn, commit_count=commits.len(), "CommitLink: found commits in push range");
         for cs in &commits {
             let log = match crate::git::notes_api::read_authorship(&repo, cs) { Some(l) => l, None => { tracing::warn!("CommitLink: no authorship for {}", cs); continue; } };
             let mut ids: Vec<String> = log.metadata.sessions.keys().cloned().collect();
@@ -1161,6 +1167,7 @@ fn submit_commit_link_on_push(worktree: &str) {
         }
         break;
     }
+    tracing::warn!(branch=%branch, "CommitLink: no remote with valid push range found");
 }
 
 fn apply_push_side_effect(
