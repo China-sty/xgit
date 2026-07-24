@@ -454,3 +454,5 @@ curl http://<服务器>:5000/api/summary/circuit-breaker
 > **注意**: 修改 `config.json` 后需重启 daemon 才能生效（`git-ai bg shutdown && git-ai bg start`）。
 
 > **Linter 注意**: config.json 可能被自动还原，需在 daemon 启动前配置好。
+
+> **提示**: 关闭 `disable_auto_updates` 防止自编译二进制被 GitHub Release 覆盖。
