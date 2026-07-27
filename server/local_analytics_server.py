@@ -965,10 +965,7 @@ def update_csv_stats():
         logger.error(f"[Stats] 更新统计 CSV 失败: {e}", exc_info=True)
 
 
-SUMMARY_FEISHU_URL = os.environ.get(
-    "SUMMARY_FEISHU_URL",
-    "https://open.feishu.cn/open-apis/bot/v2/hook/4042172f-0716-4eb8-b703-938d22821f2b",
-)
+SUMMARY_FEISHU_URL = os.environ.get("SUMMARY_FEISHU_URL")
 
 # Circuit breaker for LLM summary generation (persisted to file).
 _CIRCUIT_BREAKER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'summary_circuit_breaker.txt')
@@ -1040,10 +1037,12 @@ def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
             f'{{"one_liner":"≤20字概括","changes":"按文件列出改动，如 src/foo.rs:+12-3","why":"为什么要做这个改动",'
             f'"conversation":"开发者问了什么→AI怎么帮的，一句话"}}'
         )
-        ak = os.environ.get("SUMMARY_LLM_KEY", "sk-9de9c0de7b8349febffde4bba82e4dbe")
+        ak = os.environ.get("SUMMARY_LLM_KEY")
         bu = os.environ.get("SUMMARY_LLM_URL", "https://api.deepseek.com/v1")
         md = os.environ.get("SUMMARY_LLM_MODEL", "deepseek-chat")
-        logger.info(f"[Summary] calling {md} url={bu} key={'SET' if ak else 'MISSING'}")
+        if not ak:
+            logger.warning(f"[Summary] SUMMARY_LLM_KEY not set — skipping LLM call for {commit_sha[:8]}")
+            return
         try:
             from openai import OpenAI
             client = OpenAI(base_url=bu, api_key=ak, timeout=60)
@@ -1069,19 +1068,22 @@ def _generate_push_summary(commit_sha, session_ids, branch, diff_stat,
                 s.get("why","")))
             conn.commit()
         logger.info(f"[Summary] SAVED {commit_sha[:8]}")
-        card = {"msg_type":"interactive","card":{"header":{"title":{"content":f"🚀 {s.get('one_liner',commit_sha[:8])}","tag":"plain_text"}},
-            "elements":[
-            {"tag":"div","text":{"tag":"lark_md","content":f"**分支** {branch} | **作者** {author}\n`{commit_sha[:8]}` {commit_message}"}},
-            {"tag":"hr"},
-            {"tag":"div","text":{"tag":"lark_md","content":f"**📝 改动**\n{s.get('changes','(无)')}"}},
-            {"tag":"hr"},
-            {"tag":"div","text":{"tag":"lark_md","content":f"**❓ 原因**\n{s.get('why','(无)')}"}},
-            {"tag":"hr"},
-            {"tag":"div","text":{"tag":"lark_md","content":f"**💬 对话**\n{s.get('conversation','(无)')}"}},
-            ]}}
-        cr = urllib.request.Request(SUMMARY_FEISHU_URL, data=json.dumps(card, ensure_ascii=False).encode(),
-                                     headers={"Content-Type":"application/json"}, method="POST")
-        with urllib.request.urlopen(cr, timeout=10) as r: logger.info(f"[Summary] FEISHU {r.status}")
+        if SUMMARY_FEISHU_URL:
+            card = {"msg_type":"interactive","card":{"header":{"title":{"content":f"🚀 {s.get('one_liner',commit_sha[:8])}","tag":"plain_text"}},
+                "elements":[
+                {"tag":"div","text":{"tag":"lark_md","content":f"**分支** {branch} | **作者** {author}\n`{commit_sha[:8]}` {commit_message}"}},
+                {"tag":"hr"},
+                {"tag":"div","text":{"tag":"lark_md","content":f"**📝 改动**\n{s.get('changes','(无)')}"}},
+                {"tag":"hr"},
+                {"tag":"div","text":{"tag":"lark_md","content":f"**❓ 原因**\n{s.get('why','(无)')}"}},
+                {"tag":"hr"},
+                {"tag":"div","text":{"tag":"lark_md","content":f"**💬 对话**\n{s.get('conversation','(无)')}"}},
+                ]}}
+            cr = urllib.request.Request(SUMMARY_FEISHU_URL, data=json.dumps(card, ensure_ascii=False).encode(),
+                                         headers={"Content-Type":"application/json"}, method="POST")
+            with urllib.request.urlopen(cr, timeout=10) as r: logger.info(f"[Summary] FEISHU {r.status}")
+        else:
+            logger.info(f"[Summary] SUMMARY_FEISHU_URL not set — skipping Feishu notification")
     except Exception as e:
         logger.error(f"[Summary] FAIL: {e}", exc_info=True)
 
