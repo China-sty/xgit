@@ -210,6 +210,6 @@ CommitLink 摘要功能需要两个开关同时开启：
 
 配置文件：`Y:\acsp\agent_service\.env`
 
-日志文件：`Y:\acsp\server.log`
+日志文件：`Y:\acsp\server.log`（需在脚本运行时实时查看）
 
 数据库文件：`Y:\acsp\git_ai_local_analytics.db`
