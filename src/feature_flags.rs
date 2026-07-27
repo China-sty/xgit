@@ -90,6 +90,7 @@ define_feature_flags!(
     async_mode: async_mode, debug = true, release = true,
     git_hooks_enabled: git_hooks_enabled, debug = false, release = false,
     git_hooks_externally_managed: git_hooks_externally_managed, debug = false, release = false,
+    enable_push_summary: enable_push_summary, debug = true, release = false,
 );
 
 impl FeatureFlags {
@@ -149,6 +150,7 @@ mod tests {
             assert!(flags.async_mode);
             assert!(!flags.git_hooks_enabled);
             assert!(!flags.git_hooks_externally_managed);
+            assert!(flags.enable_push_summary);
         }
         #[cfg(not(debug_assertions))]
         {
@@ -255,6 +257,7 @@ mod tests {
             async_mode: true,
             git_hooks_enabled: false,
             git_hooks_externally_managed: false,
+            enable_push_summary: false,
         };
 
         let serialized = serde_json::to_string(&flags).unwrap();
@@ -282,6 +285,7 @@ mod tests {
             async_mode: true,
             git_hooks_enabled: false,
             git_hooks_externally_managed: false,
+            enable_push_summary: false,
         };
         let cloned = flags.clone();
         assert_eq!(cloned.auth_keyring, flags.auth_keyring);
