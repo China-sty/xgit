@@ -204,7 +204,7 @@ CommitLink 摘要功能需要两个开关同时开启：
 | `SUMMARY_LLM_MODEL` | AI 摘要模型 | `deepseek-chat` |
 | `SUMMARY_FEISHU_URL` | 摘要飞书通知 URL | 可选，未设置则跳过飞书推送 |
 
-## 部署
+## 部署运行
 
 服务器脚本位置：`Y:\acsp\local_analytics_server.py`
 
